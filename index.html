@@ -380,7 +380,7 @@
   .legend i.gold{ background:#ffd166; box-shadow:0 0 9px #ffd166; }
   .legend i.blue{ background:#4cc9f0; box-shadow:0 0 9px #4cc9f0; }
   .legend i.golden{ background:#fff3b0; box-shadow:0 0 11px #ffe066; }
-  .legend i.pu{ background:#b388ff; box-shadow:0 0 9px #b388ff; }
+  .legend i.bomb{ background:#ef476f; box-shadow:0 0 11px #ef476f; }
 
   .btn{
     margin-top:10px;
@@ -445,6 +445,7 @@
         <span><i class="gold"></i>Star +1</span>
         <span><i class="blue"></i>Blue +3</span>
         <span><i class="golden"></i>Golden +5</span>
+        <span><i class="bomb"></i>Bomb = Miss</span>
       </div>
       <p>Chain catches to raise your <b>combo multiplier</b> up to <b>×5</b>!</p>
       <p class="warn">Miss 3 stars and it's over!</p>
@@ -530,7 +531,6 @@
     }
   };
 
-  // 74% normal / 20% blue / 6% golden
   function pickStarType() {
     const r = Math.random() * 100;
     if (r < 6)  return 'golden';
@@ -554,38 +554,134 @@
   }
 
   let state = STATE.IDLE;
-  let paused = false;            // manual or auto (tab hidden) pause
+  let paused = false;            
 
-  let W = 0, H = 0;              // logical (CSS pixel) size of the play field
-  let stars = [];                // falling stars
-  let powerups = [];             // falling power-ups
-  let particles = [];            // sparkle particles
-  let floaters = [];             // floating "+N" texts
-  let bgStars = [];              // twinkling background dots
+  let W = 0, H = 0;              
+  let stars = [];                
+  let hazards = [];              
+  let powerups = [];             
+  let particles = [];            
+  let floaters = [];             
+  let bgStars = [];              
 
   let score = 0;
   let misses = 0;
   let combo = 0;
   let multiplier = 1;
-  let elapsed = 0;               // seconds since the round started
+  let elapsed = 0;               
   let spawnTimer = 0;
+  let hazardTimer = 0;
   let powerTimer = 0;
   let lastTime = 0;
 
   let magnetTimer = 0;
   let bigTimer = 0;
   let slowTimer = 0;
+  let feverTimer = 0;
 
-  const basket = { cx: 0, y: 0, w: 90, h: 50 };
+  const basket = { cx: 0, y: 0, w: 90, h: 50, tilt: 0 };
   const keys = { left: false, right: false };
-  let pointerTarget = null;      // x position the basket should slide to
+  let pointerTarget = null;      
+
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+
+  /* ============================================================
+     Pre-rendered Caches (Performance Optimization)
+  ============================================================ */
+  const CACHE = {};
+  
+  function initCaches() {
+    // 1. Pre-render Stars
+    for (const type in STAR_TYPES) {
+      const t = STAR_TYPES[type];
+      const c = document.createElement('canvas');
+      const maxR = 40; 
+      const pad = 40; 
+      const size = maxR * 2 + pad * 2;
+      c.width = size; c.height = size;
+      const xctx = c.getContext('2d');
+      const cx = size/2, cy = size/2;
+
+      xctx.shadowColor = t.glow;
+      xctx.shadowBlur = type === 'golden' ? 26 : (type === 'blue' ? 20 : 18);
+
+      const g = xctx.createLinearGradient(cx, cy - maxR, cx, cy + maxR);
+      g.addColorStop(0, t.c0);
+      g.addColorStop(0.5, t.c1);
+      g.addColorStop(1, t.c2);
+
+      xctx.fillStyle = g;
+      xctx.beginPath();
+      for (let i = 0; i < t.spikes * 2; i++) {
+        const r = (i % 2 === 0) ? maxR : maxR * 0.44;
+        const a = (i * Math.PI) / t.spikes - Math.PI / 2;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (i === 0) xctx.moveTo(x, y);
+        else xctx.lineTo(x, y);
+      }
+      xctx.closePath();
+      xctx.fill();
+
+      // Golden halo logic included directly in cache
+      if (type === 'golden') {
+        xctx.shadowBlur = 0;
+        xctx.strokeStyle = 'rgba(255,255,255,.5)';
+        xctx.lineWidth = 3;
+        xctx.beginPath();
+        xctx.arc(cx, cy, maxR * 1.75, 0, Math.PI * 2);
+        xctx.stroke();
+      }
+      CACHE[type] = { img: c, size, maxR };
+    }
+
+    // 2. Pre-render Hazard Bomb
+    const c = document.createElement('canvas');
+    const maxR = 40;
+    const pad = 40;
+    const size = maxR * 2 + pad * 2;
+    c.width = size; c.height = size;
+    const xctx = c.getContext('2d');
+    const cx = size/2, cy = size/2;
+
+    xctx.shadowColor = '#ef476f';
+    xctx.shadowBlur = 22;
+    const g = xctx.createRadialGradient(cx - maxR*0.2, cy - maxR*0.2, maxR*0.1, cx, cy, maxR);
+    g.addColorStop(0, '#ffb3c6');
+    g.addColorStop(0.4, '#ef476f');
+    g.addColorStop(1, '#5c0011');
+
+    xctx.fillStyle = g;
+    xctx.beginPath();
+    const spikes = 9;
+    for (let i = 0; i < spikes * 2; i++) {
+      const r = (i % 2 === 0) ? maxR : maxR * 0.7;
+      const a = (i * Math.PI) / spikes;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) xctx.moveTo(x, y);
+      else xctx.lineTo(x, y);
+    }
+    xctx.closePath();
+    xctx.fill();
+
+    // Dark core
+    xctx.shadowBlur = 0;
+    xctx.fillStyle = '#2b0008';
+    xctx.beginPath();
+    xctx.arc(cx, cy, maxR * 0.45, 0, Math.PI*2);
+    xctx.fill();
+
+    CACHE['hazard'] = { img: c, size, maxR };
+  }
+  
+  // Call cache generator immediately 
+  initCaches();
+
 
   /* ============================================================
      Helpers
   ============================================================ */
-  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
-
-  // Effective basket width (grows while the Big Basket power-up is active)
   function basketW() {
     return basket.w * (bigTimer > 0 ? 1.55 : 1);
   }
@@ -605,27 +701,13 @@
     ctx.closePath();
   }
 
-  function starPath(cx, cy, spikes, outer, inner, rot) {
-    ctx.beginPath();
-    for (let i = 0; i < spikes * 2; i++) {
-      const r = (i % 2 === 0) ? outer : inner;
-      const a = rot + (i * Math.PI) / spikes - Math.PI / 2;
-      const x = cx + Math.cos(a) * r;
-      const y = cy + Math.sin(a) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-  }
-
-  // Short haptic pulse(s) — silently no-ops where unsupported
   function vibrate(pattern) {
     if (!navigator.vibrate) return;
     try { navigator.vibrate(pattern); } catch (e) { /* ignore */ }
   }
 
   /* ============================================================
-     Audio (Web Audio API – no files needed)
+     Audio (Web Audio API)
   ============================================================ */
   let audioCtx = null;
   let soundOn = true;
@@ -653,7 +735,6 @@
     osc.stop(t0 + dur + 0.03);
   }
 
-  // Catch pitch rises with the combo multiplier
   function playCatch(mult, leveledUp) {
     const base = 600 + mult * 95;
     tone(base,       0,    0.09, 'triangle', 0.15);
@@ -732,13 +813,12 @@
     scoreEl.textContent = score;
     const remaining = MAX_MISSES - misses;
     livesEls.forEach((el, i) => el.classList.toggle('lost', i >= remaining));
-    // Low-life warning vignette: pulsing red glow on the last life only
     lowLifeEl.classList.toggle('on', state === STATE.PLAYING && remaining === 1);
   }
 
   function popScore() {
     scorePill.classList.remove('pop');
-    void scorePill.offsetWidth;   // restart the animation
+    void scorePill.offsetWidth;   
     scorePill.classList.add('pop');
     setTimeout(() => scorePill.classList.remove('pop'), 280);
   }
@@ -851,10 +931,10 @@
   }
 
   /* ============================================================
-     Stars
+     Stars & Hazards
   ============================================================ */
   function difficulty() {
-    return Math.min(1 + elapsed / 22, 3.0);   // speed multiplier, caps at 3x
+    return Math.min(1 + elapsed / 22, 3.0);
   }
 
   function spawnStar() {
@@ -879,7 +959,7 @@
     const halfW = basketW() / 2;
     const leftEdge  = basket.cx - halfW;
     const rightEdge = basket.cx + halfW;
-    const magnetOn  = magnetTimer > 0;
+    const magnetOn  = magnetTimer > 0 || feverTimer > 0;
 
     for (let i = stars.length - 1; i >= 0; i--) {
       const s = stars[i];
@@ -887,11 +967,12 @@
       s.rot += s.rotSpeed * dt;
       s.twinkle += dt * 6;
 
-      // Magnet pull: drag stars horizontally toward the basket
+      // Magnet pull (Stronger in fever mode)
       if (magnetOn) {
         const dy = basket.y - s.y;
         if (dy > -20 && dy < H * 0.7) {
-          const strength = 3.6 * (1 - Math.max(dy, 0) / (H * 0.7));
+          const str = feverTimer > 0 ? 5.5 : 3.6;
+          const strength = str * (1 - Math.max(dy, 0) / (H * 0.7));
           s.x += (basket.cx - s.x) * Math.min(strength * dt, 1);
         }
       }
@@ -918,11 +999,11 @@
 
   function catchStar(s) {
     const def = STAR_TYPES[s.type];
+    const oldMult = multiplier;
 
-    // ---- Combo ----
     combo++;
     const newMult = comboMultiplier(combo);
-    const leveledUp = newMult > multiplier;
+    const leveledUp = newMult > oldMult;
     multiplier = newMult;
 
     const gained = def.points * multiplier;
@@ -937,7 +1018,12 @@
                  '+' + gained + (multiplier > 1 ? ' (×' + multiplier + ')' : ''),
                  def.burst, false);
 
-    if (leveledUp) {
+    // Fever Mode threshold hit!
+    if (newMult === 5 && oldMult < 5) {
+      feverTimer = 5;
+      showComboFlash('FEVER MODE!');
+      vibrate([100, 50, 100]);
+    } else if (leveledUp) {
       showComboFlash('×' + newMult + ' COMBO!');
       spawnParticles(basket.cx, basket.y - 6, '#ff8f1f', 18);
     }
@@ -947,7 +1033,6 @@
   }
 
   function missStar(s) {
-    // Combo breaks
     combo = 0;
     multiplier = 1;
     updateComboBadge(false);
@@ -961,6 +1046,62 @@
     vibrate(40);
     if (misses >= MAX_MISSES) gameOver();
   }
+
+  // --- Hazard Logics ---
+  function spawnHazard() {
+    const r = clamp(W * 0.038, 12, 20);
+    hazards.push({
+      x: r + Math.random() * (W - r * 2),
+      y: -r * 2.5,
+      r,
+      speed: H * (0.28 + Math.random() * 0.12) * difficulty(),
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 4
+    });
+  }
+
+  function updateHazards(dt) {
+    const slowFactor = slowTimer > 0 ? 0.45 : 1;
+    const halfW = basketW() / 2;
+    const leftEdge  = basket.cx - halfW;
+    const rightEdge = basket.cx + halfW;
+
+    for (let i = hazards.length - 1; i >= 0; i--) {
+      const h = hazards[i];
+      h.y += h.speed * dt * slowFactor;
+      h.rot += h.rotSpeed * dt;
+
+      const touchingBasketBand = (h.y + h.r > basket.y) &&
+                                 (h.y - h.r < basket.y + basket.h);
+      const overBasket = (h.x > leftEdge  - h.r * 0.4) &&
+                         (h.x < rightEdge + h.r * 0.4);
+
+      if (touchingBasketBand && overBasket) {
+        catchHazard(h);
+        hazards.splice(i, 1);
+        continue;
+      }
+
+      if (h.y - h.r > H) hazards.splice(i, 1);
+    }
+  }
+
+  function catchHazard(h) {
+    combo = 0;
+    multiplier = 1;
+    updateComboBadge(false);
+
+    misses++;
+    updateHUD();
+    spawnParticles(h.x, basket.y, '#ef476f', 24);
+    spawnFloater(h.x, basket.y - 12, 'BOMB!', '#ef476f', true);
+    playMiss();
+    flash();
+    shake();
+    vibrate([50, 50, 100]);
+    if (misses >= MAX_MISSES) gameOver();
+  }
+
 
   /* ============================================================
      Power-ups
@@ -1004,7 +1145,6 @@
         continue;
       }
 
-      // Missing a power-up is free — no life lost
       if (p.y - p.r > H) powerups.splice(i, 1);
     }
   }
@@ -1023,7 +1163,6 @@
       if (misses > 0) {
         misses--;
         label = '+1 LIFE';
-        // little heart restore animation
         const idx = MAX_MISSES - misses - 1;
         if (livesEls[idx]) {
           livesEls[idx].classList.remove('gain');
@@ -1042,20 +1181,21 @@
 
     spawnParticles(p.x, p.y, def.color, 20);
     spawnFloater(p.x, p.y - 6, def.emoji + ' ' + label, def.color, true);
-    lastFxKey = '';   // force the chips to refresh immediately
+    lastFxKey = '';   
   }
 
   /* ============================================================
-     Basket
+     Basket Movement & Tilt
   ============================================================ */
   function updateBasket(dt) {
     const halfW = basketW() / 2;
     const minX = halfW;
     const maxX = W - halfW;
+    const oldX = basket.cx;
 
     if (pointerTarget !== null) {
-      const k = 1 - Math.exp(-20 * dt);          // smooth follow
-      basket.cx += (pointerTarget - basket.cx) * k;
+      // Feature: Instant Touch Movement without any smooth lag
+      basket.cx = pointerTarget; 
     } else {
       const speed = Math.max(420, W * 1.15);
       let dir = 0;
@@ -1065,6 +1205,13 @@
     }
 
     basket.cx = clamp(basket.cx, minX, maxX);
+
+    // Feature: Visual Tilt Mapping
+    const vx = dt > 0 ? (basket.cx - oldX) / dt : 0;
+    const targetTilt = clamp(vx * 0.0004, -0.3, 0.3); // Caps at ~17 degrees
+    
+    if (basket.tilt === undefined) basket.tilt = 0;
+    basket.tilt += (targetTilt - basket.tilt) * (1 - Math.exp(-12 * dt)); // Soft lean easing
   }
 
   /* ============================================================
@@ -1086,33 +1233,32 @@
   function drawStars() {
     for (let i = 0; i < stars.length; i++) {
       const s = stars[i];
-      const t = STAR_TYPES[s.type];
       const pulse = 1 + Math.sin(s.twinkle) * 0.06;
       const r = s.r * pulse;
+      const cache = CACHE[s.type];
+      const scale = r / cache.maxR;
+
+      // Draw optimally from cache
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      ctx.scale(scale, scale);
+      ctx.drawImage(cache.img, -cache.size/2, -cache.size/2);
+      ctx.restore();
+    }
+  }
+
+  function drawHazards() {
+    const cache = CACHE['hazard'];
+    for (let i = 0; i < hazards.length; i++) {
+      const h = hazards[i];
+      const scale = h.r / cache.maxR;
 
       ctx.save();
-      ctx.shadowColor = t.glow;
-      ctx.shadowBlur = s.type === 'golden' ? 26 : (s.type === 'blue' ? 20 : 18);
-
-      const g = ctx.createLinearGradient(s.x, s.y - r, s.x, s.y + r);
-      g.addColorStop(0,   t.c0);
-      g.addColorStop(0.5, t.c1);
-      g.addColorStop(1,   t.c2);
-
-      ctx.fillStyle = g;
-      starPath(s.x, s.y, t.spikes, r, r * 0.44, s.rot);
-      ctx.fill();
-
-      // Golden stars get a soft halo ring so they read as "rare" at a glance
-      if (s.type === 'golden') {
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = 'rgba(255,255,255,.5)';
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, r * 1.75, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
+      ctx.translate(h.x, h.y);
+      ctx.rotate(h.rot);
+      ctx.scale(scale, scale);
+      ctx.drawImage(cache.img, -cache.size/2, -cache.size/2);
       ctx.restore();
     }
   }
@@ -1124,7 +1270,6 @@
       const bob = 1 + Math.sin(p.phase * 2) * 0.06;
       const r = p.r * bob;
 
-      // Glowing orb
       ctx.save();
       ctx.shadowColor = def.color;
       ctx.shadowBlur = 24;
@@ -1138,7 +1283,6 @@
       ctx.fill();
       ctx.restore();
 
-      // Ring
       ctx.save();
       ctx.strokeStyle = 'rgba(255,255,255,.55)';
       ctx.lineWidth = 1.5;
@@ -1147,7 +1291,6 @@
       ctx.stroke();
       ctx.restore();
 
-      // Emoji icon
       ctx.save();
       ctx.font = Math.round(r * 1.15) + 'px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
       ctx.textAlign = 'center';
@@ -1192,16 +1335,20 @@
   }
 
   function drawMagnetAura() {
-    if (magnetTimer <= 0) return;
+    const isMagnet = magnetTimer > 0;
+    const isFever = feverTimer > 0;
+    if (!isMagnet && !isFever) return;
+    
     const cx = basket.cx;
     const cy = basket.y + basket.h / 2;
-    const radius = Math.max(120, H * 0.34);
-    const fade = Math.min(1, magnetTimer / 1.2);   // fade out at the end
+    const radius = Math.max(120, H * (isFever ? 0.44 : 0.34)); // Bigger aura in fever
+    const fade = Math.min(1, Math.max(magnetTimer, feverTimer) / 1.2); 
+    const color = isFever ? '255,200,50' : '76,201,240';
 
     const g = ctx.createRadialGradient(cx, cy, 8, cx, cy, radius);
-    g.addColorStop(0,   'rgba(76,201,240,' + (0.28 * fade) + ')');
-    g.addColorStop(0.55,'rgba(76,201,240,' + (0.11 * fade) + ')');
-    g.addColorStop(1,   'rgba(76,201,240,0)');
+    g.addColorStop(0,   `rgba(${color},${0.28 * fade})`);
+    g.addColorStop(0.55,`rgba(${color},${0.11 * fade})`);
+    g.addColorStop(1,   `rgba(${color},0)`);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -1214,12 +1361,16 @@
 
   function drawBasket() {
     const w = basketW();
-    const x = basket.cx - w / 2;
-    const y = basket.y;
     const h = basket.h;
+    const x = -w / 2;
+    const y = -h / 2;
+
+    ctx.save();
+    // Translation setup for rotation from center 
+    ctx.translate(basket.cx, basket.y + h / 2);
+    ctx.rotate(basket.tilt || 0);
 
     // Body
-    ctx.save();
     ctx.shadowColor = bigTimer > 0 ? 'rgba(255,209,102,.75)' : 'rgba(76,201,240,.5)';
     ctx.shadowBlur = 22;
     const g = ctx.createLinearGradient(0, y, 0, y + h);
@@ -1228,10 +1379,9 @@
     ctx.fillStyle = g;
     roundRectPath(x, y, w, h, 11);
     ctx.fill();
-    ctx.restore();
 
     // Weave lines
-    ctx.save();
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(120,58,0,.35)';
     ctx.lineWidth = 2;
     for (let i = 1; i < 5; i++) {
@@ -1241,22 +1391,36 @@
       ctx.lineTo(px, y + h - 5);
       ctx.stroke();
     }
-    ctx.restore();
 
     // Rim
-    ctx.save();
     ctx.fillStyle = '#ffd166';
     ctx.shadowColor = 'rgba(255,209,102,.6)';
     ctx.shadowBlur = 12;
     roundRectPath(x - 4, y - 7, w + 8, 13, 6);
     ctx.fill();
+
     ctx.restore();
   }
 
   function render() {
     ctx.clearRect(0, 0, W, H);
     drawBackground(performance.now() / 1000);
+
+    // Feature: Fever golden screen wash effect
+    if (feverTimer > 0) {
+      const fade = Math.min(1, feverTimer / 0.5); // Fast fade out near end
+      ctx.save();
+      ctx.globalCompositeOperation = 'color-dodge';
+      const g = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, H * 0.85);
+      g.addColorStop(0, `rgba(255, 200, 50, ${fade * 0.4})`);
+      g.addColorStop(1, `rgba(255, 100, 0, 0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
     drawStars();
+    drawHazards();
     drawPowerups();
     drawMagnetAura();
     drawParticles();
@@ -1282,7 +1446,7 @@
     paused = false;
     pauseOverlay.classList.add('hidden');
     pauseBtn.textContent = '⏸';
-    lastTime = 0;          // next frame gets dt = 0, so no jump
+    lastTime = 0;          
   }
 
   /* ============================================================
@@ -1303,16 +1467,20 @@
     elapsed = 0;
     spawnTimer = 0.15;
     powerTimer = 9 + Math.random() * 4;
+    hazardTimer = 4;
     stars = [];
+    hazards = [];
     powerups = [];
     particles = [];
     floaters = [];
     magnetTimer = 0;
     bigTimer = 0;
     slowTimer = 0;
+    feverTimer = 0;
     pointerTarget = null;
     keys.left = keys.right = false;
     basket.cx = W / 2;
+    basket.tilt = 0;
 
     lastFxKey = '';
     fxBar.innerHTML = '';
@@ -1337,7 +1505,7 @@
     finalScoreEl.textContent = score;
     bestScoreEl.textContent = best;
     overScreen.classList.remove('hidden');
-    updateHUD();           // clears the low-life vignette
+    updateHUD();           
     playGameOver();
     vibrate([60, 50, 60, 50, 180]);
   }
@@ -1348,31 +1516,37 @@
   function update(dt) {
     elapsed += dt;
 
-    // Power-up timers
     if (magnetTimer > 0) magnetTimer = Math.max(0, magnetTimer - dt);
     if (bigTimer    > 0) bigTimer    = Math.max(0, bigTimer    - dt);
     if (slowTimer   > 0) slowTimer   = Math.max(0, slowTimer   - dt);
+    if (feverTimer  > 0) feverTimer  = Math.max(0, feverTimer  - dt);
 
     updateBasket(dt);
     updateStars(dt);
+    updateHazards(dt);
     updatePowerups(dt);
     updateParticles(dt);
     updateFloaters(dt);
     updateEffectsUI();
 
-    // Spawn stars, faster and faster over time
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
       spawnStar();
+      if (feverTimer > 0) spawnStar(); // Feature: Double drops in Fever Mode
       const base = Math.max(0.34, 0.95 - elapsed * 0.012);
       spawnTimer = base * (0.75 + Math.random() * 0.5);
     }
 
-    // Spawn power-ups on their own, slower cadence
     powerTimer -= dt;
     if (powerTimer <= 0) {
       spawnPowerup();
       powerTimer = 15 + Math.random() * 8;
+    }
+
+    hazardTimer -= dt;
+    if (hazardTimer <= 0) {
+      spawnHazard();
+      hazardTimer = 4 + Math.random() * 5;
     }
   }
 
@@ -1382,7 +1556,7 @@
     if (!lastTime) lastTime = t;
     let dt = (t - lastTime) / 1000;
     lastTime = t;
-    dt = Math.min(dt, 0.05);      // avoid huge jumps after tab switches
+    dt = Math.min(dt, 0.05);      
 
     if (state === STATE.PLAYING && !paused) update(dt);
 
@@ -1421,7 +1595,7 @@
   });
 
   /* ============================================================
-     Input – pointer / touch (drag to move)
+     Input – pointer / touch 
   ============================================================ */
   let dragging = false;
 
@@ -1447,7 +1621,7 @@
     e.preventDefault();
   });
 
-  const endDrag = () => { dragging = false; };
+  const endDrag = () => { dragging = false; pointerTarget = null; };
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
   canvas.addEventListener('pointerleave', endDrag);
@@ -1459,7 +1633,7 @@
     if (document.hidden) {
       if (state === STATE.PLAYING) pauseGame();
     } else {
-      lastTime = 0;          // discard the hidden-time gap
+      lastTime = 0;          
     }
   });
 
