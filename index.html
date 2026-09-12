@@ -681,4 +681,1415 @@
 
   const particles = makePool(340, function () {
     return { x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0,
-             life: 0, max: 1,
+             life: 0, max: 1, r: 2, color: '#fff' };
+  });
+
+  const floaters = makePool(36, function () {
+    return { x: 0, y: 0, px: 0, py: 0, text: '',
+             color: '#fff', size: 14, life: 0, max: 1 };
+  });
+
+  /* ============================================================
+     [V6] BASKET COLLISION FRAME
+     ------------------------------------------------------------
+     The basket visually rotates with `basket.tilt`.  Collision is
+     resolved in the basket's LOCAL (rotated) space so the catch
+     line follows the real rim instead of a fat AABB.
+  ============================================================ */
+  const frame = {
+    cx: 0, pivotY: 0, cos: 1, sin: 0,
+    halfW: 45, h: 50, rimTop: 0, rimBottom: 0
+  };
+
+  function updateBasketFrame() {
+    const tilt = basket.tilt || 0;
+    frame.cx      = basket.cx;
+    frame.pivotY  = basket.y + basket.h / 2;
+    frame.cos     = Math.cos(tilt);
+    frame.sin     = Math.sin(tilt);
+    frame.halfW   = basketW() / 2;
+    frame.h       = basket.h;
+    frame.rimTop  = -basket.h / 2 - 8;   // includes the drawn rim lip
+    frame.rimBottom = basket.h / 2;
+  }
+
+  /* World → basket-local.  Writes into `out` to stay allocation-free. */
+  const localOut = { lx: 0, ly: 0 };
+  function toLocal(x, y) {
+    const dx = x - frame.cx;
+    const dy = y - frame.pivotY;
+    localOut.lx =  dx * frame.cos + dy * frame.sin;
+    localOut.ly = -dx * frame.sin + dy * frame.cos;
+    return localOut;
+  }
+
+  /* ============================================================
+     Pre-rendered Caches (Performance Optimization)
+  ============================================================ */
+  const CACHE = {};
+
+  function initCaches() {
+    // 1. Pre-render Stars
+    for (const type in STAR_TYPES) {
+      const t = STAR_TYPES[type];
+      const c = document.createElement('canvas');
+      const maxR = 40;
+      const pad = 40;
+      const size = maxR * 2 + pad * 2;
+      c.width = size; c.height = size;
+      const xctx = c.getContext('2d');
+      const cx = size / 2, cy = size / 2;
+
+      xctx.shadowColor = t.glow;
+      xctx.shadowBlur = type === 'golden' ? 26 : (type === 'blue' ? 20 : 18);
+
+      const g = xctx.createLinearGradient(cx, cy - maxR, cx, cy + maxR);
+      g.addColorStop(0, t.c0);
+      g.addColorStop(0.5, t.c1);
+      g.addColorStop(1, t.c2);
+
+      xctx.fillStyle = g;
+      xctx.beginPath();
+      for (let i = 0; i < t.spikes * 2; i++) {
+        const r = (i % 2 === 0) ? maxR : maxR * 0.44;
+        const a = (i * Math.PI) / t.spikes - Math.PI / 2;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (i === 0) xctx.moveTo(x, y);
+        else xctx.lineTo(x, y);
+      }
+      xctx.closePath();
+      xctx.fill();
+
+      // Bake the point value into the sprite for colour-blind readability
+      if (type === 'blue' || type === 'golden') {
+        xctx.shadowBlur = 0;
+        xctx.font = 'bold 26px "Segoe UI", system-ui, sans-serif';
+        xctx.textAlign = 'center';
+        xctx.textBaseline = 'middle';
+        xctx.lineWidth = 3.5;
+        xctx.strokeStyle = 'rgba(255,255,255,.9)';
+        xctx.strokeText('+' + t.points, cx, cy + 1);
+        xctx.fillStyle = type === 'blue' ? '#062a3d' : '#4a2600';
+        xctx.fillText('+' + t.points, cx, cy + 1);
+      }
+
+      if (type === 'golden') {
+        xctx.shadowBlur = 0;
+        xctx.strokeStyle = 'rgba(255,255,255,.5)';
+        xctx.lineWidth = 3;
+        xctx.beginPath();
+        xctx.arc(cx, cy, maxR * 1.75, 0, Math.PI * 2);
+        xctx.stroke();
+      }
+      CACHE[type] = { img: c, size: size, maxR: maxR };
+    }
+
+    // 2. Pre-render Hazard Bomb
+    const c = document.createElement('canvas');
+    const maxR = 40;
+    const pad = 40;
+    const size = maxR * 2 + pad * 2;
+    c.width = size; c.height = size;
+    const xctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+
+    xctx.shadowColor = '#ef476f';
+    xctx.shadowBlur = 22;
+    const g = xctx.createRadialGradient(cx - maxR * 0.2, cy - maxR * 0.2, maxR * 0.1, cx, cy, maxR);
+    g.addColorStop(0, '#ffb3c6');
+    g.addColorStop(0.4, '#ef476f');
+    g.addColorStop(1, '#5c0011');
+
+    xctx.fillStyle = g;
+    xctx.beginPath();
+    const spikes = 9;
+    for (let i = 0; i < spikes * 2; i++) {
+      const r = (i % 2 === 0) ? maxR : maxR * 0.7;
+      const a = (i * Math.PI) / spikes;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) xctx.moveTo(x, y);
+      else xctx.lineTo(x, y);
+    }
+    xctx.closePath();
+    xctx.fill();
+
+    xctx.shadowBlur = 0;
+    xctx.fillStyle = '#2b0008';
+    xctx.beginPath();
+    xctx.arc(cx, cy, maxR * 0.45, 0, Math.PI * 2);
+    xctx.fill();
+
+    CACHE['hazard'] = { img: c, size: size, maxR: maxR };
+  }
+
+  initCaches();
+
+  /* ============================================================
+     Helpers
+  ============================================================ */
+  function basketW() {
+    return basket.w * (bigTimer > 0 ? 1.55 : 1);
+  }
+
+  function comboMultiplier(c) {
+    return Math.min(1 + Math.floor(c / 3), 5);
+  }
+
+  function roundRectPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  }
+
+  function vibrate(pattern) {
+    if (!navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch (e) { /* ignore */ }
+  }
+
+  /* ============================================================
+     [V6] AUDIO — master bus with dynamic compression
+     ------------------------------------------------------------
+     synth → gain → DynamicsCompressor → masterGain → destination
+     The compressor tames the peaks that occur when a dozen tones
+     fire on the same frame (fever mode + combo chains), and the
+     master gain keeps the whole mix below the clip ceiling.
+  ============================================================ */
+  let audioCtx = null;
+  let busIn = null;          // compressor input — everything connects here
+  let compressorNode = null;
+  let masterGain = null;
+  let soundOn = true;
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        audioCtx = new AC();
+
+        compressorNode = audioCtx.createDynamicsCompressor();
+        // Gentle glue-style limiting: musical, not pumping.
+        compressorNode.threshold.setValueAtTime(-18, audioCtx.currentTime);
+        compressorNode.knee.setValueAtTime(24, audioCtx.currentTime);
+        compressorNode.ratio.setValueAtTime(9, audioCtx.currentTime);
+        compressorNode.attack.setValueAtTime(0.003, audioCtx.currentTime);
+        compressorNode.release.setValueAtTime(0.22, audioCtx.currentTime);
+
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(0.85, audioCtx.currentTime);
+
+        compressorNode.connect(masterGain);
+        masterGain.connect(audioCtx.destination);
+
+        busIn = compressorNode;
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function tone(freq, delay, dur, type, vol) {
+    if (!audioCtx || !busIn || !soundOn) return;
+    const t0 = audioCtx.currentTime + delay;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.linearRampToValueAtTime(vol || 0.16, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(busIn);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.03);
+  }
+
+  function playCatch(mult, leveledUp) {
+    const base = 600 + mult * 95;
+    tone(base,       0,    0.09, 'triangle', 0.15);
+    tone(base * 1.5, 0.055, 0.12, 'triangle', 0.11);
+    if (leveledUp) {
+      tone(base * 2.0, 0.11, 0.14, 'sine', 0.13);
+      tone(base * 2.5, 0.17, 0.20, 'sine', 0.11);
+      tone(base * 3.0, 0.24, 0.24, 'sine', 0.09);
+    }
+  }
+
+  const playMiss     = () => { tone(300, 0, 0.16, 'triangle', 0.14);
+                               tone(170, 0.09, 0.24, 'triangle', 0.12); };
+  const playGameOver = () => { tone(523, 0, 0.18, 'triangle', 0.15);
+                               tone(392, 0.16, 0.18, 'triangle', 0.15);
+                               tone(294, 0.32, 0.45, 'triangle', 0.15); };
+  const playPowerup  = () => { tone(660, 0, 0.10, 'sine', 0.14);
+                               tone(990, 0.07, 0.12, 'sine', 0.13);
+                               tone(1320, 0.15, 0.18, 'sine', 0.11); };
+  const playLife     = () => { tone(784, 0, 0.12, 'triangle', 0.14);
+                               tone(1046, 0.09, 0.16, 'triangle', 0.13);
+                               tone(1318, 0.19, 0.24, 'triangle', 0.12); };
+  const playNearMiss = () => { tone(1560, 0, 0.06, 'sine', 0.07);
+                               tone(2100, 0.04, 0.08, 'sine', 0.05); };
+
+  /* [V6] Filtered-sweep whoosh for the dash. */
+  function playDash() {
+    if (!audioCtx || !busIn || !soundOn) return;
+    const t0 = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const filt = audioCtx.createBiquadFilter();
+
+    filt.type = 'bandpass';
+    filt.frequency.setValueAtTime(1400, t0);
+    filt.frequency.exponentialRampToValueAtTime(420, t0 + 0.22);
+    filt.Q.setValueAtTime(1.4, t0);
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(760, t0);
+    osc.frequency.exponentialRampToValueAtTime(170, t0 + 0.22);
+
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.14, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+
+    osc.connect(filt).connect(g).connect(busIn);
+    osc.start(t0);
+    osc.stop(t0 + 0.27);
+  }
+
+  /* ============================================================
+     Sizing / responsiveness
+  ============================================================ */
+  function makeBgStars() {
+    bgStars = [];
+    const count = Math.round((W * H) / 9000);
+    for (let i = 0; i < count; i++) {
+      bgStars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: 0.6 + Math.random() * 1.6,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.6 + Math.random() * 1.4
+      });
+    }
+  }
+
+  function resize() {
+    const w = gameArea.clientWidth;
+    const h = gameArea.clientHeight;
+    if (w < 2 || h < 2) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    canvas.width  = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    W = w;
+    H = h;
+
+    basket.w = clamp(W * 0.24, 64, 110);
+    basket.h = basket.w * 0.55;
+    basket.y = H - basket.h - 18;
+
+    if (!basket.cx) { basket.cx = W / 2; basket.px = basket.cx; }
+    const halfW = basketW() / 2;
+    basket.cx = clamp(basket.cx, halfW, W - halfW);
+    basket.px = basket.cx;
+
+    makeBgStars();
+    updateBasketFrame();
+    needsRedraw = true;
+  }
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(resize).observe(gameArea);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+  /* ============================================================
+     HUD
+  ============================================================ */
+  function updateHUD() {
+    scoreEl.textContent = score;
+    const remaining = MAX_MISSES - misses;
+    livesEls.forEach((el, i) => el.classList.toggle('lost', i >= remaining));
+    lowLifeEl.classList.toggle('on', state === STATE.PLAYING && remaining === 1);
+  }
+
+  function popScore() {
+    scorePill.classList.remove('pop');
+    void scorePill.offsetWidth;
+    scorePill.classList.add('pop');
+    setTimeout(() => scorePill.classList.remove('pop'), 280);
+  }
+
+  function flash() {
+    flashEl.classList.add('on');
+    setTimeout(() => flashEl.classList.remove('on'), 70);
+  }
+
+  function shake() {
+    gameArea.classList.remove('shake');
+    void gameArea.offsetWidth;
+    gameArea.classList.add('shake');
+    setTimeout(() => gameArea.classList.remove('shake'), 420);
+  }
+
+  /* ---------- Combo UI ---------- */
+  function updateComboBadge(bump) {
+    if (combo > 0) {
+      comboBadge.classList.add('on');
+      comboBadgeCount.textContent = combo;
+      comboBadgeMult.textContent = multiplier;
+    } else {
+      comboBadge.classList.remove('on');
+    }
+    if (bump) {
+      comboBadge.classList.remove('bump');
+      void comboBadge.offsetWidth;
+      comboBadge.classList.add('bump');
+    }
+  }
+
+  function updateComboBar() {
+    const pct = combo > 0 ? Math.max(0, comboTimer / COMBO_WINDOW) : 0;
+    comboBar.style.transform = 'scaleX(' + pct + ')';
+  }
+
+  function showComboFlash(text) {
+    comboFlash.textContent = text;
+    comboFlash.classList.remove('show');
+    void comboFlash.offsetWidth;
+    comboFlash.classList.add('show');
+  }
+
+  /* ---------- Power-up chips ---------- */
+  let lastFxKey = '';
+
+  function updateEffectsUI() {
+    const items = [];
+    if (magnetTimer > 0) items.push({ e: '🧲', c: '#4cc9f0', t: magnetTimer });
+    if (bigTimer    > 0) items.push({ e: '📦', c: '#ffd166', t: bigTimer });
+    if (slowTimer   > 0) items.push({ e: '🐌', c: '#b388ff', t: slowTimer });
+
+    const key = items.map(i => i.e + Math.ceil(i.t)).join('|');
+    if (key === lastFxKey) return;
+    lastFxKey = key;
+
+    fxBar.innerHTML = items.map(i =>
+      '<div class="fx-chip" style="color:' + i.c + ';border-color:' + i.c + '66">' +
+        '<span>' + i.e + '</span>' +
+        '<span class="fx-time">' + Math.ceil(i.t) + 's</span>' +
+      '</div>'
+    ).join('');
+  }
+
+  /* ============================================================
+     Particles & floaters  (pooled — no allocation, no splice)
+  ============================================================ */
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const p = particles.spawn();
+      if (!p) return;
+      const a = Math.random() * Math.PI * 2;
+      const sp = 60 + Math.random() * 170;
+      p.x = p.px = x;
+      p.y = p.py = y;
+      p.vx = Math.cos(a) * sp;
+      p.vy = Math.sin(a) * sp - 60;
+      p.max = p.life = 0.65;
+      p.r = 2 + Math.random() * 3;
+      p.color = color;
+    }
+  }
+
+  function updateParticles(dt) {
+    const P = particles;
+    for (let i = P.count - 1; i >= 0; i--) {
+      const p = P.items[i];
+      p.px = p.x;
+      p.py = p.y;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 340 * dt;
+      p.life -= dt;
+      if (p.life <= 0) P.kill(i);
+    }
+  }
+
+  function spawnFloater(x, y, text, color, big) {
+    const f = floaters.spawn();
+    if (!f) return;
+    f.x = f.px = clamp(x, 44, W - 44);
+    f.y = f.py = y;
+    f.text = text;
+    f.color = color;
+    f.size = big ? 20 : 14;
+    f.max = f.life = big ? 1.15 : 0.9;
+  }
+
+  function updateFloaters(dt) {
+    const F = floaters;
+    for (let i = F.count - 1; i >= 0; i--) {
+      const f = F.items[i];
+      f.px = f.x;
+      f.py = f.y;
+      f.y -= 52 * dt;
+      f.life -= dt;
+      if (f.life <= 0) F.kill(i);
+    }
+  }
+
+  /* ============================================================
+     Stars, hazards & power-ups
+  ============================================================ */
+  function difficulty() {
+    return Math.min(1 + elapsed / 22, 3.0);
+  }
+
+  function spawnStar() {
+    const type = pickStarType();
+    const def  = STAR_TYPES[type];
+    const r = clamp(W * 0.032, 9, 17) * def.rMul;
+
+    stars.push({
+      x: 0, y: 0, px: 0, py: 0,
+      r: r,
+      type: type,
+      speed: H * (0.24 + Math.random() * 0.07) * difficulty(),
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 2.6,
+      twinkle: Math.random() * Math.PI * 2,
+      nearMiss: false
+    });
+    const s = stars[stars.length - 1];
+    s.x = s.px = r + Math.random() * (W - r * 2);
+    s.y = s.py = -r * 2;
+  }
+
+  function updateStars(dt) {
+    const slowFactor = slowTimer > 0 ? 0.45 : 1;
+    const magnetOn  = magnetTimer > 0 || feverTimer > 0;
+    const halfW = frame.halfW;
+
+    for (let i = stars.length - 1; i >= 0; i--) {
+      const s = stars[i];
+      s.px = s.x;
+      s.py = s.y;
+
+      s.y += s.speed * dt * slowFactor;
+      s.rot += s.rotSpeed * dt;
+      s.twinkle += dt * 6;
+
+      // Magnet pull (stronger in fever mode)
+      if (magnetOn) {
+        const dy = basket.y - s.y;
+        if (dy > -20 && dy < H * 0.7) {
+          const str = feverTimer > 0 ? 5.5 : 3.6;
+          const strength = str * (1 - Math.max(dy, 0) / (H * 0.7));
+          s.x += (basket.cx - s.x) * Math.min(strength * dt, 1);
+        }
+      }
+
+      /* ---- [V6] Tilt-aware collision in basket-local space ---- */
+      const l = toLocal(s.x, s.y);
+      const lx = l.lx, ly = l.ly;
+
+      const inRimBand = (ly + s.r > frame.rimTop) && (ly - s.r < frame.rimBottom + 6);
+      const overMouth = Math.abs(lx) < halfW + s.r * 0.3;
+
+      if (inRimBand && overMouth) {
+        catchStar(s);
+        stars.splice(i, 1);
+        continue;
+      }
+
+      /* ---- [V6] Near-miss: slipped past the outer rim edge ---- */
+      if (!s.nearMiss && ly > frame.rimBottom && ly < frame.rimBottom + 46) {
+        const ax = Math.abs(lx);
+        if (ax > halfW && ax < halfW + NEAR_MISS_RANGE) {
+          s.nearMiss = true;
+          nearMiss(s);
+        }
+      }
+
+      if (s.y - s.r > H) {
+        missStar(s);
+        stars.splice(i, 1);
+      }
+    }
+  }
+
+  function catchStar(s) {
+    const def = STAR_TYPES[s.type];
+    const oldMult = multiplier;
+
+    combo++;
+    comboTimer = COMBO_WINDOW;
+    const newMult = comboMultiplier(combo);
+    const leveledUp = newMult > oldMult;
+    multiplier = newMult;
+
+    const gained = def.points * multiplier;
+    score += gained;
+
+    updateHUD();
+    popScore();
+    updateComboBadge(true);
+
+    spawnParticles(s.x, basket.y, def.burst, s.type === 'normal' ? 14 : 22);
+    spawnFloater(s.x, basket.y - 10,
+                 '+' + gained + (multiplier > 1 ? ' (×' + multiplier + ')' : ''),
+                 def.burst, false);
+
+    if (newMult === 5 && oldMult < 5) {
+      feverTimer = 5;
+      showComboFlash('FEVER MODE!');
+      vibrate([100, 50, 100]);
+    } else if (leveledUp) {
+      showComboFlash('×' + newMult + ' COMBO!');
+      spawnParticles(basket.cx, basket.y - 6, '#ff8f1f', 18);
+      vibrate(15);
+    }
+
+    playCatch(multiplier, leveledUp);
+  }
+
+  /* ---- [V6] Near-miss reward ---- */
+  function nearMiss(s) {
+    score += NEAR_MISS_BONUS;
+    updateHUD();
+    popScore();
+    spawnParticles(s.x, s.y, '#ffe89a', 9);
+    spawnFloater(s.x, s.y - 6, 'NEAR MISS +' + NEAR_MISS_BONUS, '#ffe89a', false);
+    playNearMiss();
+  }
+
+  function missStar(s) {
+    combo = 0;
+    multiplier = 1;
+    comboTimer = 0;
+    updateComboBadge(false);
+
+    misses++;
+    updateHUD();
+    spawnParticles(s.x, Math.min(s.y, H - 8), '#ef476f', 10);
+    playMiss();
+    flash();
+    shake();
+    vibrate(40);
+    if (misses >= MAX_MISSES) gameOver();
+  }
+
+  /* --- Hazards --- */
+  function spawnHazard() {
+    const r = clamp(W * 0.038, 12, 20);
+    hazards.push({
+      x: r + Math.random() * (W - r * 2),
+      y: -r * 2.5,
+      px: 0, py: 0,
+      r: r,
+      speed: H * (0.28 + Math.random() * 0.12) * difficulty(),
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 4
+    });
+    const h = hazards[hazards.length - 1];
+    h.px = h.x; h.py = h.y;
+  }
+
+  function updateHazards(dt) {
+    const slowFactor = slowTimer > 0 ? 0.45 : 1;
+    const halfW = frame.halfW;
+
+    for (let i = hazards.length - 1; i >= 0; i--) {
+      const h = hazards[i];
+      h.px = h.x;
+      h.py = h.y;
+
+      h.y += h.speed * dt * slowFactor;
+      h.rot += h.rotSpeed * dt;
+
+      const l = toLocal(h.x, h.y);
+      const inRimBand = (l.ly + h.r > frame.rimTop) && (l.ly - h.r < frame.rimBottom + 6);
+      const overMouth = Math.abs(l.lx) < halfW + h.r * 0.3;
+
+      if (inRimBand && overMouth) {
+        catchHazard(h);
+        hazards.splice(i, 1);
+        continue;
+      }
+
+      if (h.y - h.r > H) hazards.splice(i, 1);
+    }
+  }
+
+  function catchHazard(h) {
+    combo = 0;
+    multiplier = 1;
+    comboTimer = 0;
+    updateComboBadge(false);
+
+    misses++;
+    updateHUD();
+    spawnParticles(h.x, basket.y, '#ef476f', 24);
+    spawnFloater(h.x, basket.y - 12, 'BOMB!', '#ef476f', true);
+    playMiss();
+    flash();
+    shake();
+    vibrate([50, 50, 100]);
+    if (misses >= MAX_MISSES) gameOver();
+  }
+
+  /* --- Power-ups --- */
+  function spawnPowerup() {
+    if (powerups.length >= 2) return;
+
+    const type = pickPowerupType();
+    const r = clamp(W * 0.045, 14, 24);
+
+    powerups.push({
+      x: 0, y: 0, px: 0, py: 0,
+      r: r,
+      type: type,
+      speed: H * (0.15 + Math.random() * 0.05),
+      phase: Math.random() * Math.PI * 2
+    });
+    const p = powerups[powerups.length - 1];
+    p.x = p.px = r + Math.random() * (W - r * 2);
+    p.y = p.py = -r * 2.4;
+  }
+
+  function updatePowerups(dt) {
+    const slowFactor = slowTimer > 0 ? 0.45 : 1;
+    const halfW = frame.halfW;
+
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      p.px = p.x;
+      p.py = p.y;
+
+      p.y += p.speed * dt * slowFactor;
+      p.phase += dt * 2;
+      p.x = clamp(p.x + Math.sin(p.phase) * 16 * dt, p.r, W - p.r);
+
+      const l = toLocal(p.x, p.y);
+      const inRimBand = (l.ly + p.r > frame.rimTop) && (l.ly - p.r < frame.rimBottom + 6);
+      const overMouth = Math.abs(l.lx) < halfW + p.r * 0.3;
+
+      if (inRimBand && overMouth) {
+        collectPowerup(p);
+        powerups.splice(i, 1);
+        continue;
+      }
+
+      if (p.y - p.r > H) powerups.splice(i, 1);
+    }
+  }
+
+  function collectPowerup(p) {
+    const def = POWERUP_DEFS[p.type];
+    let label = def.label;
+
+    if (p.type === 'magnet') {
+      magnetTimer = MAGNET_TIME;
+    } else if (p.type === 'basket') {
+      bigTimer = BIG_TIME;
+    } else if (p.type === 'slow') {
+      slowTimer = SLOW_TIME;
+    } else if (p.type === 'life') {
+      if (misses > 0) {
+        misses--;
+        label = '+1 LIFE';
+        const idx = MAX_MISSES - misses - 1;
+        if (livesEls[idx]) {
+          livesEls[idx].classList.remove('gain');
+          void livesEls[idx].offsetWidth;
+          livesEls[idx].classList.add('gain');
+        }
+      } else {
+        score += 10;
+        label = 'MAX ❤ +10';
+      }
+      updateHUD();
+      playLife();
+    }
+
+    if (p.type !== 'life') playPowerup();
+
+    spawnParticles(p.x, p.y, def.color, 20);
+    spawnFloater(p.x, p.y - 6, def.emoji + ' ' + label, def.color, true);
+    lastFxKey = '';
+  }
+
+  /* ============================================================
+     [V6] Dash
+  ============================================================ */
+  function tryDash(dir) {
+    if (state !== STATE.PLAYING || paused) return false;
+    if (!dir) return false;
+    if (dashCooldown > 0 || dashTimer > 0) return false;
+
+    dashDir = dir > 0 ? 1 : -1;
+    dashTimer = DASH_TIME;
+    dashCooldown = DASH_COOLDOWN;
+
+    spawnParticles(basket.cx - dashDir * 14, basket.y + basket.h * 0.5, '#4cc9f0', 14);
+    spawnFloater(basket.cx, basket.y - 18, 'DASH!', '#4cc9f0', true);
+    playDash();
+    vibrate(18);
+    return true;
+  }
+
+  /* ============================================================
+     Basket movement & tilt
+  ============================================================ */
+  function updateBasket(dt) {
+    const halfW = basketW() / 2;
+    const minX = halfW;
+    const maxX = W - halfW;
+
+    basket.px = basket.cx;
+    const oldX = basket.cx;
+
+    if (dashCooldown > 0) dashCooldown = Math.max(0, dashCooldown - dt);
+
+    if (dashTimer > 0) {
+      /* ---- [V6] Dash thrust overrides normal steering ---- */
+      dashTimer = Math.max(0, dashTimer - dt);
+      const k = dashTimer / DASH_TIME;                 // 1 → 0
+      const step = dashDir * DASH_SPEED * (0.30 + 0.70 * k) * dt;
+      basket.cx += step;
+      if (pointerTarget !== null) pointerTarget += step;
+
+      if (Math.random() < 0.75) {
+        spawnParticles(basket.cx - dashDir * 12,
+                       basket.y + basket.h * 0.5,
+                       'rgba(76,201,240,1)', 1);
+      }
+    } else if (pointerTarget !== null) {
+      basket.cx = pointerTarget;
+    } else {
+      const speed = Math.max(420, W * 1.15);
+      let dir = 0;
+      if (keys.left)  dir -= 1;
+      if (keys.right) dir += 1;
+      basket.cx += dir * speed * dt;
+    }
+
+    basket.cx = clamp(basket.cx, minX, maxX);
+    if (pointerTarget !== null) pointerTarget = clamp(pointerTarget, minX, maxX);
+
+    // Velocity-mapped visual lean
+    const vx = dt > 0 ? (basket.cx - oldX) / dt : 0;
+    const targetTilt = clamp(vx * 0.0004, -0.3, 0.3);
+
+    basket.tilt += (targetTilt - basket.tilt) * (1 - Math.exp(-12 * dt));
+  }
+
+  /* ============================================================
+     Rendering  (decoupled from physics; `alpha` interpolates)
+  ============================================================ */
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function drawBackground(time) {
+    for (let i = 0; i < bgStars.length; i++) {
+      const b = bgStars[i];
+      const a = 0.18 + 0.34 * (0.5 + 0.5 * Math.sin(time * b.speed + b.phase));
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#cbb8ff';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawStars(alpha) {
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+      const pulse = 1 + Math.sin(s.twinkle) * 0.06;
+      const r = s.r * pulse;
+      const cache = CACHE[s.type];
+      const scale = r / cache.maxR;
+
+      ctx.save();
+      ctx.translate(lerp(s.px, s.x, alpha), lerp(s.py, s.y, alpha));
+      ctx.rotate(s.rot);
+      ctx.scale(scale, scale);
+      ctx.drawImage(cache.img, -cache.size / 2, -cache.size / 2);
+      ctx.restore();
+    }
+  }
+
+  function drawHazards(alpha) {
+    const cache = CACHE['hazard'];
+    for (let i = 0; i < hazards.length; i++) {
+      const h = hazards[i];
+      const scale = h.r / cache.maxR;
+
+      ctx.save();
+      ctx.translate(lerp(h.px, h.x, alpha), lerp(h.py, h.y, alpha));
+      ctx.rotate(h.rot);
+      ctx.scale(scale, scale);
+      ctx.drawImage(cache.img, -cache.size / 2, -cache.size / 2);
+      ctx.restore();
+    }
+  }
+
+  function drawPowerups(alpha) {
+    for (let i = 0; i < powerups.length; i++) {
+      const p = powerups[i];
+      const def = POWERUP_DEFS[p.type];
+      const bob = 1 + Math.sin(p.phase * 2) * 0.06;
+      const r = p.r * bob;
+      const x = lerp(p.px, p.x, alpha);
+      const y = lerp(p.py, p.y, alpha);
+
+      ctx.save();
+      ctx.shadowColor = def.color;
+      ctx.shadowBlur = 24;
+      const g = ctx.createRadialGradient(x, y - r * 0.35, 1, x, y, r);
+      g.addColorStop(0,   'rgba(255,255,255,.95)');
+      g.addColorStop(0.42, def.color);
+      g.addColorStop(1,   'rgba(20,10,45,.85)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,.55)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 1.22, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.font = Math.round(r * 1.15) + 'px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.emoji, x, y + r * 0.05);
+      ctx.restore();
+    }
+  }
+
+  function drawParticles(alpha) {
+    const P = particles;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < P.count; i++) {
+      const p = P.items[i];
+      ctx.globalAlpha = Math.max(p.life / p.max, 0);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(lerp(p.px, p.x, alpha), lerp(p.py, p.y, alpha), p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFloaters(alpha) {
+    const F = floaters;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < F.count; i++) {
+      const f = F.items[i];
+      ctx.globalAlpha = Math.min(1, (f.life / f.max) * 1.7);
+      ctx.font = '800 ' + f.size + "px 'Segoe UI', system-ui, sans-serif";
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(8,6,20,.85)';
+      const x = lerp(f.px, f.x, alpha);
+      const y = lerp(f.py, f.y, alpha);
+      ctx.strokeText(f.text, x, y);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, x, y);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMagnetAura() {
+    const isMagnet = magnetTimer > 0;
+    const isFever = feverTimer > 0;
+    if (!isMagnet && !isFever) return;
+
+    const cx = basket.cx;
+    const cy = basket.y + basket.h / 2;
+    const radius = Math.max(120, H * (isFever ? 0.44 : 0.34));
+    const fade = Math.min(1, Math.max(magnetTimer, feverTimer) / 1.2);
+    const color = isFever ? '255,200,50' : '76,201,240';
+
+    const g = ctx.createRadialGradient(cx, cy, 8, cx, cy, radius);
+    g.addColorStop(0,    'rgba(' + color + ',' + (0.28 * fade) + ')');
+    g.addColorStop(0.55, 'rgba(' + color + ',' + (0.11 * fade) + ')');
+    g.addColorStop(1,    'rgba(' + color + ',0)');
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBasket(alpha) {
+    const w = basketW();
+    const h = basket.h;
+    const x = -w / 2;
+    const y = -h / 2;
+    const cx = lerp(basket.px, basket.cx, alpha);
+
+    ctx.save();
+    ctx.translate(cx, basket.y + h / 2);
+    ctx.rotate(basket.tilt || 0);
+
+    // Dash glow while thrusting
+    const dashing = dashTimer > 0;
+
+    // Body
+    ctx.shadowColor = dashing ? 'rgba(76,201,240,.95)'
+                    : (bigTimer > 0 ? 'rgba(255,209,102,.75)' : 'rgba(76,201,240,.5)');
+    ctx.shadowBlur = dashing ? 34 : 22;
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, dashing ? '#9be7ff' : '#ffb703');
+    g.addColorStop(1, dashing ? '#2a9dd6' : '#dd7000');
+    ctx.fillStyle = g;
+    roundRectPath(x, y, w, h, 11);
+    ctx.fill();
+
+    // Weave lines
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(120,58,0,.35)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 5; i++) {
+      const px = x + (w / 5) * i;
+      ctx.beginPath();
+      ctx.moveTo(px, y + 5);
+      ctx.lineTo(px, y + h - 5);
+      ctx.stroke();
+    }
+
+    // Rim (the visual catch line)
+    ctx.fillStyle = dashing ? '#d6f6ff' : '#ffd166';
+    ctx.shadowColor = 'rgba(255,209,102,.6)';
+    ctx.shadowBlur = 12;
+    roundRectPath(x - 4, y - 7, w + 8, 13, 6);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function render(alpha) {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground(performance.now() / 1000);
+
+    // Fever golden screen wash
+    if (feverTimer > 0) {
+      const fade = Math.min(1, feverTimer / 0.5);
+      ctx.save();
+      ctx.globalCompositeOperation = 'color-dodge';
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, H * 0.85);
+      g.addColorStop(0, 'rgba(255, 200, 50, ' + (fade * 0.4) + ')');
+      g.addColorStop(1, 'rgba(255, 100, 0, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
+    drawStars(alpha);
+    drawHazards(alpha);
+    drawPowerups(alpha);
+    drawMagnetAura();
+    drawParticles(alpha);
+    drawFloaters(alpha);
+    drawBasket(alpha);
+  }
+
+  /* ============================================================
+     Pause / resume
+  ============================================================ */
+  function pauseGame() {
+    if (state !== STATE.PLAYING || paused) return;
+    paused = true;
+    pauseOverlay.classList.remove('hidden');
+    pauseBtn.textContent = '▶';
+    keys.left = keys.right = false;
+    dragging = false;
+    grabOffset = 0;
+    pointerTarget = null;
+    accumulator = 0;
+  }
+
+  function resumeGame() {
+    if (!paused) return;
+    paused = false;
+    pauseOverlay.classList.add('hidden');
+    pauseBtn.textContent = '⏸';
+    lastTime = 0;
+    accumulator = 0;
+  }
+
+  /* ============================================================
+     Game flow
+  ============================================================ */
+  function startGame() {
+    ensureAudio();
+
+    state = STATE.PLAYING;
+    paused = false;
+    pauseOverlay.classList.add('hidden');
+    pauseBtn.textContent = '⏸';
+
+    score = 0;
+    misses = 0;
+    combo = 0;
+    multiplier = 1;
+    comboTimer = 0;
+    elapsed = 0;
+    spawnTimer = 0.15;
+    powerTimer = 9 + Math.random() * 4;
+    hazardTimer = 4;
+    stars = [];
+    hazards = [];
+    powerups = [];
+    particles.clear();
+    floaters.clear();
+    magnetTimer = 0;
+    bigTimer = 0;
+    slowTimer = 0;
+    feverTimer = 0;
+    pointerTarget = null;
+    dragging = false;
+    grabOffset = 0;
+    keys.left = keys.right = false;
+
+    /* [V6] dash reset */
+    dashTimer = 0;
+    dashDir = 0;
+    dashCooldown = 0;
+    flickArmed = false;
+    lastTapTime = 0;
+
+    basket.cx = W / 2;
+    basket.px = W / 2;
+    basket.tilt = 0;
+
+    lastFxKey = '';
+    fxBar.innerHTML = '';
+    comboFlash.classList.remove('show');
+    comboBar.style.transform = 'scaleX(0)';
+
+    updateBasketFrame();
+    updateHUD();
+    updateComboBadge(false);
+    startScreen.classList.add('hidden');
+    overScreen.classList.add('hidden');
+
+    lastTime = 0;
+    accumulator = 0;
+  }
+
+  function gameOver() {
+    state = STATE.OVER;
+
+    let best = score;
+    try {
+      const stored = Number(localStorage.getItem('cts_best') || 0);
+      best = Math.max(score, stored);
+      localStorage.setItem('cts_best', String(best));
+    } catch (e) { /* storage may be unavailable */ }
+
+    finalScoreEl.textContent = score;
+    bestScoreEl.textContent = best;
+    overScreen.classList.remove('hidden');
+    updateHUD();
+    playGameOver();
+    vibrate([60, 50, 60, 50, 180]);
+  }
+
+  /* ============================================================
+     [V6] FIXED-TIMESTEP UPDATE
+     ------------------------------------------------------------
+     Always advances in exact 1/60 s slices, so gameplay speed is
+     identical on 60 Hz, 90 Hz, 120 Hz and variable-refresh panels.
+  ============================================================ */
+  function update(dt) {
+    elapsed += dt;
+
+    if (magnetTimer > 0) magnetTimer = Math.max(0, magnetTimer - dt);
+    if (bigTimer    > 0) bigTimer    = Math.max(0, bigTimer    - dt);
+    if (slowTimer   > 0) slowTimer   = Math.max(0, slowTimer   - dt);
+    if (feverTimer  > 0) feverTimer  = Math.max(0, feverTimer  - dt);
+
+    // Combo decay — combo dies if you don't keep catching
+    if (combo > 0) {
+      comboTimer -= dt;
+      if (comboTimer <= 0) {
+        combo = 0;
+        multiplier = 1;
+        comboTimer = 0;
+        updateComboBadge(false);
+      }
+    }
+    updateComboBar();
+
+    updateBasket(dt);
+    updateBasketFrame();   // [V6] collision frame follows the tilt
+
+    updateStars(dt);
+    updateHazards(dt);
+    updatePowerups(dt);
+    updateParticles(dt);
+    updateFloaters(dt);
+    updateEffectsUI();
+
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawnStar();
+      if (feverTimer > 0) spawnStar();
+      const base = Math.max(0.34, 0.95 - elapsed * 0.012);
+      spawnTimer = base * (0.75 + Math.random() * 0.5);
+    }
+
+    powerTimer -= dt;
+    if (powerTimer <= 0) {
+      spawnPowerup();
+      powerTimer = 15 + Math.random() * 8;
+    }
+
+    hazardTimer -= dt;
+    if (hazardTimer <= 0) {
+      spawnHazard();
+      hazardTimer = 4 + Math.random() * 5;
+    }
+  }
+
+  /* ============================================================
+     [V6] MAIN LOOP — accumulator + interpolated render
+     ------------------------------------------------------------
+     Physics: locked to 60 Hz.
+     Render:  every animation frame, interpolating entity positions
+              between the previous and current physics state using
+              the leftover accumulator fraction.  Result: buttery
+              motion on high-refresh displays, stable simulation
+              on slow ones, and no spiral-of-death on jank.
+  ============================================================ */
+  function loop(t) {
+    requestAnimationFrame(loop);
+
+    if (!lastTime) lastTime = t;
+    let frameTime = (t - lastTime) / 1000;
+    lastTime = t;
+
+    if (frameTime < 0) frameTime = 0;
+    if (frameTime > MAX_FRAME) frameTime = MAX_FRAME;
+
+    if (state === STATE.PLAYING && !paused) {
+      accumulator += frameTime;
+
+      let steps = 0;
+      while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+        update(FIXED_DT);
+        accumulator -= FIXED_DT;
+        steps++;
+      }
+      // If we hit the ceiling, drop the backlog rather than
+      // accumulating debt forever (avoids the death spiral).
+      if (steps === MAX_STEPS) accumulator = 0;
+
+      render(accumulator / FIXED_DT);
+    } else if (needsRedraw) {
+      render(1);
+      needsRedraw = false;
+    }
+  }
+
+  /* ============================================================
+     Input – keyboard
+  ============================================================ */
+  window.addEventListener('keydown', (e) => {
+    const k = e.key;
+
+    if (k === 'ArrowLeft' || k === 'a' || k === 'A') {
+      keys.left = true;
+      pointerTarget = null;
+      e.preventDefault();
+    } else if (k === 'ArrowRight' || k === 'd' || k === 'D') {
+      keys.right = true;
+      pointerTarget = null;
+      e.preventDefault();
+    } else if (k === 'Shift') {
+      // Keyboard parity for the mobile dash gesture
+      const dir = keys.left ? -1 : (keys.right ? 1 : 0);
+      tryDash(dir || 1);
+      e.preventDefault();
+    } else if (k === 'p' || k === 'P' || k === 'Escape') {
+      if (state === STATE.PLAYING) {
+        if (paused) resumeGame(); else pauseGame();
+      }
+      e.preventDefault();
+    } else if (k === ' ' || k === 'Enter') {
+      if (state === STATE.IDLE || state === STATE.OVER) startGame();
+      e.preventDefault();
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    const k = e.key;
+    if (k === 'ArrowLeft'  || k === 'a' || k === 'A') keys.left = false;
+    if (k === 'ArrowRight' || k === 'd' || k === 'D') keys.right = false;
+  });
+
+  /* ============================================================
+     Input – pointer / touch  (+ [V6] double-tap & flick dash)
+  ============================================================ */
+  let dragStartX = 0;
+  let dragStartTime = 0;
+  let flickArmed = false;
+  let lastTapTime = 0;
+  let lastTapX = 0;
+
+  function computeTargetX(clientX, useGrabOffset) {
+    const rect = canvas.getBoundingClientRect();
+    const rawX = clientX - rect.left;
+    const halfW = basketW() / 2;
+    const x = useGrabOffset ? rawX + grabOffset : rawX;
+    return clamp(x, halfW, W - halfW);
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (state !== STATE.PLAYING || paused) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const rawX = e.clientX - rect.left;
+    const now = performance.now();
+
+    /* ---- [V6] Double-tap → dash toward the tap ---- */
+    if (now - lastTapTime < DOUBLE_TAP_MS && Math.abs(e.clientX - lastTapX) < 50) {
+      const dir = rawX >= basket.cx ? 1 : -1;
+      if (tryDash(dir)) {
+        lastTapTime = 0;
+        flickArmed = false;
+        dragging = true;
+        grabOffset = 0;
+        pointerTarget = computeTargetX(e.clientX, false);
+        if (canvas.setPointerCapture) {
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        }
+        e.preventDefault();
+        return;
+      }
+    }
+
+    lastTapTime = now;
+    lastTapX = e.clientX;
+
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartTime = now;
+    flickArmed = true;
+
+    // Only apply a grab offset when the touch starts near the basket;
+    // a far-away tap still snaps instantly (feels responsive).
+    grabOffset = Math.abs(rawX - basket.cx) < 70 ? basket.cx - rawX : 0;
+
+    pointerTarget = computeTargetX(e.clientX, true);
+
+    if (canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+    e.preventDefault();
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging || state !== STATE.PLAYING || paused) return;
+
+    pointerTarget = computeTargetX(e.clientX, true);
+
+    /* ---- [V6] Flick → dash ---- */
+    if (flickArmed) {
+      const now = performance.now();
+      const dtms = now - dragStartTime;
+      const dx = e.clientX - dragStartX;
+
+      if (dtms > 0 && dtms < FLICK_MAX_MS && Math.abs(dx) > FLICK_MIN_PX) {
+        const v = Math.abs(dx) / dtms;   // px per ms
+        if (v > FLICK_MIN_V) {
+          if (tryDash(dx > 0 ? 1 : -1)) flickArmed = false;
+        }
+      } else if (dtms >= FLICK_MAX_MS) {
+        flickArmed = false;
+      }
+    }
+
+    e.preventDefault();
+  });
+
+  const endDrag = () => {
+    dragging = false;
+    grabOffset = 0;
+    pointerTarget = null;
+    flickArmed = false;
+  };
+
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  /* ============================================================
+     Input – auto-pause when the tab is hidden
+  ============================================================ */
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (state === STATE.PLAYING) pauseGame();
+    } else {
+      lastTime = 0;
+      accumulator = 0;
+    }
+  });
+
+  /* ============================================================
+     Buttons
+  ============================================================ */
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+
+  soundBtn.addEventListener('click', () => {
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? '🔊' : '🔇';
+    if (soundOn) ensureAudio();
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    if (paused) resumeGame(); else pauseGame();
+  });
+
+  pauseOverlay.addEventListener('click', resumeGame);
+
+  /* ============================================================
+     Boot
+  ============================================================ */
+  resize();
+  basket.cx = W / 2;
+  basket.px = W / 2;
+  updateBasketFrame();
+  updateHUD();
+  updateComboBadge(false);
+  needsRedraw = true;
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
