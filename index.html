@@ -85,11 +85,11 @@
     gap:5px;
     font-size:22px;
     line-height:1;
-    color:var(--accent);
+    color:#ff8fa3;
   }
   .lives span{
     transition:color .3s, transform .3s, text-shadow .3s;
-    text-shadow:0 0 12px rgba(255,209,102,.85);
+    text-shadow:0 0 12px rgba(239,71,111,.85);
   }
   .lives span.lost{
     color:rgba(255,255,255,.14);
@@ -288,6 +288,7 @@
     text-align:center;
     background:radial-gradient(circle at 50% 38%, rgba(64,44,128,.88), rgba(8,6,20,.95));
     backdrop-filter:blur(6px);
+    overflow-y:auto;
     transition:opacity .35s ease, visibility .35s;
   }
   .overlay.hidden{
@@ -422,6 +423,218 @@
   }
   .btn:active{ transform:translateY(1px) scale(.98); }
 
+  /* ---------- HUD: level pill + goal progress ---------- */
+  .hud-left{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  #levelPill{
+    color:var(--blue);
+    border-color:rgba(76,201,240,.35);
+    background:rgba(76,201,240,.1);
+  }
+  #levelNum{ min-width:1ch; text-align:center; }
+
+  .goal-wrap{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:0 4px;
+  }
+  .goal-label{
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.3px;
+    color:rgba(255,255,255,.85);
+    white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+  }
+  .goal-bar{
+    flex:1;
+    height:8px;
+    border-radius:999px;
+    background:rgba(255,255,255,.1);
+    border:1px solid rgba(255,255,255,.12);
+    overflow:hidden;
+  }
+  .goal-fill{
+    height:100%;
+    width:0%;
+    border-radius:999px;
+    background:linear-gradient(90deg,#4cc9f0,#ffd166);
+    box-shadow:0 0 10px rgba(76,201,240,.55);
+    transition:width .25s ease;
+  }
+
+  /* ---------- Level transition banner ---------- */
+  .level-banner{
+    position:absolute;
+    top:34%; left:50%;
+    transform:translate(-50%,-50%);
+    text-align:center;
+    pointer-events:none;
+    z-index:4;
+    opacity:0;
+    white-space:nowrap;
+  }
+  .level-banner.show{ animation:levelBanner 1.5s cubic-bezier(.2,.8,.3,1) forwards; }
+  @keyframes levelBanner{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(.5); }
+    16%{ opacity:1; transform:translate(-50%,-50%) scale(1.14); }
+    30%{ transform:translate(-50%,-50%) scale(1); }
+    70%{ opacity:1; transform:translate(-50%,-62%) scale(1); }
+    100%{ opacity:0; transform:translate(-50%,-86%) scale(.96); }
+  }
+  .lb-big{
+    font-size:clamp(30px, 9vw, 46px);
+    font-weight:900;
+    letter-spacing:-.5px;
+    color:#fff;
+    text-shadow:0 0 24px rgba(255,209,102,.95), 0 0 60px rgba(239,71,111,.65);
+  }
+  .lb-sub{
+    margin-top:2px;
+    font-size:15px;
+    font-weight:800;
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    color:var(--blue);
+    text-shadow:0 0 14px rgba(76,201,240,.8);
+  }
+
+  /* ---------- Level select screen ---------- */
+  .level-grid{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:9px;
+    width:100%;
+    max-width:350px;
+    max-height:50vh;
+    overflow-y:auto;
+    padding:4px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .lv-btn{
+    position:relative;
+    aspect-ratio:1;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.06);
+    color:#fff;
+    font-family:inherit;
+    cursor:pointer;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:1px;
+    padding:2px;
+    transition:transform .15s, background .2s, box-shadow .2s;
+  }
+  .lv-btn:active{ transform:scale(.93); }
+  .lv-btn.current{
+    border-color:var(--accent);
+    background:rgba(255,209,102,.14);
+    box-shadow:0 0 18px rgba(255,209,102,.4);
+  }
+  .lv-btn.done{ background:rgba(76,201,240,.12); border-color:rgba(76,201,240,.4); }
+  .lv-btn.special{ border-color:rgba(239,71,111,.45); }
+  .lv-btn.locked{ opacity:.4; cursor:not-allowed; }
+  .lv-num{ font-size:19px; font-weight:900; line-height:1; }
+  .lv-diff{
+    font-size:7.5px;
+    font-weight:800;
+    letter-spacing:.3px;
+    color:rgba(255,255,255,.62);
+    text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .lv-tag{ font-size:11px; line-height:1; }
+  .lv-stars{ font-size:9px; line-height:1; letter-spacing:-1px; }
+  .lv-lock{ font-size:13px; line-height:1; }
+  .lv-play{ font-size:10px; line-height:1; opacity:.75; }
+
+  /* ---------- Level complete screen ---------- */
+  .lc-stars{
+    display:flex;
+    gap:12px;
+    margin:2px 0;
+  }
+  .lc-star{
+    font-size:46px;
+    line-height:1;
+    opacity:.16;
+    filter:grayscale(1);
+    transform:scale(.85);
+  }
+  .lc-star.earned{
+    opacity:1;
+    filter:none;
+    animation:starPop .5s cubic-bezier(.2,.8,.3,1.2) both;
+  }
+  @keyframes starPop{
+    0%{ transform:scale(.3) rotate(-30deg); opacity:0; }
+    60%{ transform:scale(1.35) rotate(8deg); opacity:1; }
+    100%{ transform:scale(1) rotate(0); opacity:1; }
+  }
+  .lc-goal{
+    font-size:15px !important;
+    color:#fff !important;
+    background:rgba(255,255,255,.1);
+    padding:6px 14px;
+    border-radius:999px;
+  }
+  .lc-unlock{
+    font-size:14px !important;
+    color:var(--blue) !important;
+    font-weight:800;
+  }
+  .lc-btns{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .lc-btns .btn{ margin-top:4px; }
+
+  /* ---------- Ghost / secondary button ---------- */
+  .btn-ghost{
+    background:rgba(255,255,255,.09);
+    color:#fff;
+    border:1px solid rgba(255,255,255,.22);
+    box-shadow:none;
+  }
+  .btn-ghost:hover{
+    background:rgba(255,255,255,.16);
+    box-shadow:none;
+  }
+  .start-btns{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .start-btns .btn{ margin-top:4px; }
+
+  /* ---------- Small screens: compact HUD ---------- */
+  @media (max-width:420px){
+    .pill{ padding:7px 10px; font-size:14px; }
+    .lives{ font-size:18px; }
+    .icon-btn{ width:36px; height:36px; }
+  }
+
+  /* ---------- Short screens: compact overlays so nothing clips ---------- */
+  @media (max-height:720px){
+    .overlay{ gap:9px; padding:18px 20px; }
+    .overlay h1{ font-size:clamp(22px, 6.5vw, 30px); }
+    .overlay h2{ font-size:clamp(22px, 6.5vw, 28px); }
+    .overlay p{ font-size:13.5px; line-height:1.5; }
+    .overlay .legend{ display:none; }
+    .overlay .btn{ padding:12px 28px; font-size:15px; }
+    .lc-star{ font-size:38px; }
+  }
+
   /* Respect users who prefer reduced motion */
   @media (prefers-reduced-motion: reduce){
     .game-area.shake{ animation:none !important; }
@@ -429,6 +642,8 @@
     .pill.pop{ animation:none !important; }
     .combo-badge.bump{ animation:none !important; }
     .combo-flash.show{ animation:none !important; opacity:1; }
+    .level-banner.show{ animation:none !important; opacity:1; }
+    .lc-star.earned{ animation:none !important; }
   }
 </style>
 </head>
@@ -437,14 +652,22 @@
 <div class="wrap">
 
   <div class="hud">
-    <div class="pill" id="scorePill">⭐ <span id="score">0</span></div>
+    <div class="hud-left">
+      <div class="pill" id="levelPill">LEVEL <span id="levelNum">1</span></div>
+      <div class="pill" id="scorePill">⭐ <span id="score">0</span></div>
+    </div>
     <div class="lives" id="lives">
-      <span>★</span><span>★</span><span>★</span>
+      <span>❤️</span><span>❤️</span><span>❤️</span>
     </div>
     <div class="hud-btns">
       <button class="icon-btn" id="pauseBtn" title="Pause">⏸</button>
       <button class="icon-btn" id="soundBtn" title="Toggle sound">🔊</button>
     </div>
+  </div>
+
+  <div class="goal-wrap">
+    <div class="goal-label" id="goalLabel">⭐ 0/20</div>
+    <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
   </div>
 
   <div class="game-area" id="gameArea">
@@ -466,6 +689,12 @@
     <!-- Combo level-up flash text -->
     <div class="combo-flash" id="comboFlash"></div>
 
+    <!-- Level transition banner -->
+    <div class="level-banner" id="levelBanner">
+      <div class="lb-big" id="lbBig">LEVEL 1</div>
+      <div class="lb-sub" id="lbSub"></div>
+    </div>
+
     <!-- Start screen -->
     <div class="overlay" id="startScreen">
       <h1>Catch the<br><span>Falling Stars</span></h1>
@@ -479,15 +708,45 @@
       <p>Chain catches to raise your <b>combo multiplier</b> up to <b>×5</b>!</p>
       <p><b>Double-tap</b> or <b>flick</b> to dash out of trouble.</p>
       <p class="warn">Miss 3 stars and it's over!</p>
-      <button class="btn" id="startBtn">Start Game</button>
+      <p>Complete each level's goal to advance through <b>20 levels</b>.</p>
+      <div class="start-btns">
+        <button class="btn" id="startBtn">Start Game</button>
+        <button class="btn btn-ghost" id="levelsBtn">🗺 Levels</button>
+      </div>
+      <p class="best">Best: <span id="startBest">0</span></p>
     </div>
 
     <!-- Game over screen -->
     <div class="overlay hidden" id="overScreen">
       <h2>Game Over</h2>
       <p class="final">You caught <span id="finalScore">0</span> points</p>
+      <p class="best">Reached <span id="overLevel">Level 1</span></p>
       <p class="best">Best: <span id="bestScore">0</span></p>
       <button class="btn" id="restartBtn">Play Again</button>
+    </div>
+
+    <!-- Level select screen -->
+    <div class="overlay hidden" id="levelScreen">
+      <h2>Select Level</h2>
+      <p>Replay any completed level to earn more stars.</p>
+      <div class="level-grid" id="levelGrid"></div>
+      <button class="btn" id="levelsBackBtn">← Back</button>
+    </div>
+
+    <!-- Level complete screen -->
+    <div class="overlay hidden" id="levelCompleteScreen">
+      <h2 id="lcTitle">LEVEL COMPLETE!</h2>
+      <div class="lc-stars" id="lcStars">
+        <span class="lc-star">⭐</span><span class="lc-star">⭐</span><span class="lc-star">⭐</span>
+      </div>
+      <p class="lc-goal" id="lcGoal">Objective complete!</p>
+      <p class="final">Score <span id="lcScore">0</span></p>
+      <p class="best">Best: <span id="lcBest">0</span></p>
+      <p class="lc-unlock" id="lcUnlock">Next level unlocked!</p>
+      <div class="lc-btns">
+        <button class="btn" id="nextLevelBtn">Next Level ▶</button>
+        <button class="btn btn-ghost" id="replayLevelBtn">↺ Replay</button>
+      </div>
     </div>
 
     <!-- Pause screen -->
@@ -531,12 +790,72 @@
   const comboBadgeMult  = document.getElementById('comboBadgeMult');
   const comboBar    = document.getElementById('comboBar');
   const comboFlash  = document.getElementById('comboFlash');
+  const levelPill   = document.getElementById('levelPill');
+  const levelNum    = document.getElementById('levelNum');
+  const goalLabel   = document.getElementById('goalLabel');
+  const goalFill    = document.getElementById('goalFill');
+  const levelBanner = document.getElementById('levelBanner');
+  const lbBig       = document.getElementById('lbBig');
+  const lbSub       = document.getElementById('lbSub');
+  const startBest   = document.getElementById('startBest');
+  const overLevel   = document.getElementById('overLevel');
+  const levelScreen = document.getElementById('levelScreen');
+  const levelGrid   = document.getElementById('levelGrid');
+  const levelsBtn   = document.getElementById('levelsBtn');
+  const levelsBackBtn = document.getElementById('levelsBackBtn');
+  const levelCompleteScreen = document.getElementById('levelCompleteScreen');
+  const lcTitle     = document.getElementById('lcTitle');
+  const lcStars     = document.getElementById('lcStars');
+  const lcGoal      = document.getElementById('lcGoal');
+  const lcScore     = document.getElementById('lcScore');
+  const lcBest      = document.getElementById('lcBest');
+  const lcUnlock    = document.getElementById('lcUnlock');
+  const nextLevelBtn = document.getElementById('nextLevelBtn');
+  const replayLevelBtn = document.getElementById('replayLevelBtn');
 
   /* ============================================================
      Constants & state
   ============================================================ */
   const STATE = { IDLE: 'idle', PLAYING: 'playing', OVER: 'over' };
   const MAX_MISSES = 3;
+
+  /* ============================================================
+     LEVEL CONFIG — 20 levels, easy to tweak
+     ------------------------------------------------------------
+     goal.type: 'score' | 'catch' | 'survive' | 'combo' | 'fever'
+     starSpeed:  multiplier on falling-star speed
+     spawnRate:  base seconds between star spawns
+     spawnBurst: stars spawned per spawn event
+     hazardRate: base seconds between bombs (0 = no bombs)
+     powerupRate: base seconds between power-ups (rarer as it grows)
+     goldenRate / blueRate: % chance for those star types
+     feverAt:    combo count that triggers FEVER MODE
+     comboWindow: seconds before the combo chain decays
+     tag:        special-level emoji badge
+  ============================================================ */
+  const LEVELS = [
+    { level: 1,  name: 'First Steps',    difficulty: 'Easy',      goal: { type: 'score',   target: 20 },   starSpeed: 1.00, spawnRate: 0.95, spawnBurst: 1, hazardRate: 8.0, powerupRate: 14, goldenRate: 6,  blueRate: 26, feverAt: 12, comboWindow: 2.6, tag: '' },
+    { level: 2,  name: 'Star Collector', difficulty: 'Easy',      goal: { type: 'catch',   target: 15 },   starSpeed: 1.05, spawnRate: 0.90, spawnBurst: 1, hazardRate: 7.5, powerupRate: 14, goldenRate: 6,  blueRate: 26, feverAt: 12, comboWindow: 2.6, tag: '' },
+    { level: 3,  name: 'Stay Alive',     difficulty: 'Easy',      goal: { type: 'survive', target: 30 },   starSpeed: 1.10, spawnRate: 0.88, spawnBurst: 1, hazardRate: 7.0, powerupRate: 14, goldenRate: 6,  blueRate: 26, feverAt: 12, comboWindow: 2.6, tag: '' },
+    { level: 4,  name: 'Picking Up',     difficulty: 'Normal',    goal: { type: 'score',   target: 60 },   starSpeed: 1.18, spawnRate: 0.82, spawnBurst: 1, hazardRate: 6.5, powerupRate: 15, goldenRate: 7,  blueRate: 27, feverAt: 12, comboWindow: 2.5, tag: '' },
+    { level: 5,  name: 'Combo Rookie',   difficulty: 'Normal',    goal: { type: 'combo',   target: 6 },    starSpeed: 1.22, spawnRate: 0.80, spawnBurst: 1, hazardRate: 6.0, powerupRate: 15, goldenRate: 7,  blueRate: 27, feverAt: 12, comboWindow: 2.4, tag: '' },
+    { level: 6,  name: 'Speed Rush',     difficulty: 'Normal',    goal: { type: 'score',   target: 100 },  starSpeed: 1.55, spawnRate: 0.75, spawnBurst: 1, hazardRate: 7.0, powerupRate: 16, goldenRate: 7,  blueRate: 27, feverAt: 12, comboWindow: 2.4, tag: '⚡' },
+    { level: 7,  name: 'Bomb Alert',     difficulty: 'Normal',    goal: { type: 'survive', target: 40 },   starSpeed: 1.25, spawnRate: 0.78, spawnBurst: 1, hazardRate: 4.5, powerupRate: 16, goldenRate: 7,  blueRate: 27, feverAt: 12, comboWindow: 2.4, tag: '' },
+    { level: 8,  name: 'Golden Hour',    difficulty: 'Hard',      goal: { type: 'catch',   target: 25 },   starSpeed: 1.30, spawnRate: 0.75, spawnBurst: 1, hazardRate: 5.0, powerupRate: 17, goldenRate: 18, blueRate: 26, feverAt: 12, comboWindow: 2.3, tag: '✨' },
+    { level: 9,  name: 'Bomb Rush',      difficulty: 'Hard',      goal: { type: 'score',   target: 150 },  starSpeed: 1.32, spawnRate: 0.72, spawnBurst: 1, hazardRate: 2.8, powerupRate: 17, goldenRate: 8,  blueRate: 27, feverAt: 12, comboWindow: 2.3, tag: '💣' },
+    { level: 10, name: 'Combo Master',   difficulty: 'Hard',      goal: { type: 'combo',   target: 9 },    starSpeed: 1.35, spawnRate: 0.70, spawnBurst: 1, hazardRate: 4.5, powerupRate: 17, goldenRate: 8,  blueRate: 27, feverAt: 12, comboWindow: 2.0, tag: '🔥' },
+    { level: 11, name: 'Fever Time',     difficulty: 'Hard',      goal: { type: 'fever',   target: 1 },    starSpeed: 1.38, spawnRate: 0.68, spawnBurst: 1, hazardRate: 4.5, powerupRate: 18, goldenRate: 8,  blueRate: 27, feverAt: 9,  comboWindow: 2.2, tag: '🌡' },
+    { level: 12, name: 'Double Trouble', difficulty: 'Hard',      goal: { type: 'score',   target: 250 },  starSpeed: 1.42, spawnRate: 0.62, spawnBurst: 2, hazardRate: 4.0, powerupRate: 18, goldenRate: 8,  blueRate: 28, feverAt: 12, comboWindow: 2.2, tag: '' },
+    { level: 13, name: 'Star Storm',     difficulty: 'Very Hard', goal: { type: 'catch',   target: 45 },   starSpeed: 1.48, spawnRate: 0.55, spawnBurst: 2, hazardRate: 3.8, powerupRate: 19, goldenRate: 9,  blueRate: 28, feverAt: 12, comboWindow: 2.1, tag: '' },
+    { level: 14, name: 'Endurance',      difficulty: 'Very Hard', goal: { type: 'survive', target: 60 },   starSpeed: 1.50, spawnRate: 0.60, spawnBurst: 1, hazardRate: 3.2, powerupRate: 19, goldenRate: 9,  blueRate: 28, feverAt: 12, comboWindow: 2.1, tag: '' },
+    { level: 15, name: 'Golden Rush',    difficulty: 'Very Hard', goal: { type: 'score',   target: 400 },  starSpeed: 1.55, spawnRate: 0.58, spawnBurst: 1, hazardRate: 3.6, powerupRate: 20, goldenRate: 22, blueRate: 26, feverAt: 12, comboWindow: 2.1, tag: '✨' },
+    { level: 16, name: 'Expert Speed',   difficulty: 'Expert',    goal: { type: 'score',   target: 500 },  starSpeed: 1.85, spawnRate: 0.55, spawnBurst: 1, hazardRate: 4.0, powerupRate: 20, goldenRate: 10, blueRate: 28, feverAt: 12, comboWindow: 2.0, tag: '⚡' },
+    { level: 17, name: 'Bomb Frenzy',    difficulty: 'Expert',    goal: { type: 'catch',   target: 50 },   starSpeed: 1.60, spawnRate: 0.55, spawnBurst: 1, hazardRate: 2.2, powerupRate: 21, goldenRate: 10, blueRate: 28, feverAt: 12, comboWindow: 2.0, tag: '💣' },
+    { level: 18, name: 'Combo Legend',   difficulty: 'Expert',    goal: { type: 'combo',   target: 12 },   starSpeed: 1.65, spawnRate: 0.52, spawnBurst: 1, hazardRate: 3.5, powerupRate: 21, goldenRate: 10, blueRate: 28, feverAt: 12, comboWindow: 1.7, tag: '🔥' },
+    { level: 19, name: 'Fever Frenzy',   difficulty: 'Expert',    goal: { type: 'fever',   target: 2 },    starSpeed: 1.70, spawnRate: 0.50, spawnBurst: 1, hazardRate: 3.5, powerupRate: 22, goldenRate: 10, blueRate: 28, feverAt: 9,  comboWindow: 1.9, tag: '🌡' },
+    { level: 20, name: 'Final Frontier', difficulty: 'Expert',    goal: { type: 'score',   target: 750 },  starSpeed: 1.80, spawnRate: 0.48, spawnBurst: 2, hazardRate: 2.8, powerupRate: 22, goldenRate: 10, blueRate: 28, feverAt: 12, comboWindow: 1.9, tag: '👑' }
+  ];
+
 
   /* ---- [V6] Fixed-timestep simulation constants ---- */
   const FIXED_DT   = 1 / 60;   // physics tick = 60 Hz
@@ -583,9 +902,10 @@
   };
 
   function pickStarType() {
+    const cfg = currentCfg();
     const r = Math.random() * 100;
-    if (r < 6)  return 'golden';
-    if (r < 26) return 'blue';
+    if (r < cfg.goldenRate) return 'golden';
+    if (r < cfg.goldenRate + cfg.blueRate) return 'blue';
     return 'normal';
   }
 
@@ -634,6 +954,19 @@
   let bigTimer = 0;
   let slowTimer = 0;
   let feverTimer = 0;
+
+  /* ---- Level system state ---- */
+  let levelIndex = 0;          // 0-based index into LEVELS
+  let levelStartScore = 0;     // score when the current level began
+  let levelCatches = 0;        // stars caught in the current level
+  let levelElapsed = 0;        // seconds spent in the current level
+  let levelMaxCombo = 0;       // highest combo reached in the current level
+  let levelFevers = 0;         // fever triggers in the current level
+  let celebrating = false;     // level-complete overlay is showing
+  let goalUiTimer = 0;         // throttles the goal-bar refresh
+
+  let unlocked = 1;            // highest unlocked level (1-based)
+  let bestStars = {};          // { level: stars 1-3 }
 
   /* ---- [V6] Dash state ---- */
   let dashTimer = 0;
@@ -1015,9 +1348,11 @@
   ============================================================ */
   function updateHUD() {
     scoreEl.textContent = score;
+    levelNum.textContent = levelIndex + 1;
     const remaining = MAX_MISSES - misses;
     livesEls.forEach((el, i) => el.classList.toggle('lost', i >= remaining));
     lowLifeEl.classList.toggle('on', state === STATE.PLAYING && remaining === 1);
+    updateGoalUI();
   }
 
   function popScore() {
@@ -1056,7 +1391,7 @@
   }
 
   function updateComboBar() {
-    const pct = combo > 0 ? Math.max(0, comboTimer / COMBO_WINDOW) : 0;
+    const pct = combo > 0 ? Math.max(0, comboTimer / comboWindow()) : 0;
     comboBar.style.transform = 'scaleX(' + pct + ')';
   }
 
@@ -1147,8 +1482,18 @@
   /* ============================================================
      Stars, hazards & power-ups
   ============================================================ */
-  function difficulty() {
-    return Math.min(1 + elapsed / 22, 3.0);
+  function currentCfg() {
+    return LEVELS[levelIndex];
+  }
+
+  /* Star/hazard speed = level multiplier × gentle in-level ramp */
+  function levelSpeedFactor() {
+    const ramp = 1 + Math.min(levelElapsed / 45, 1) * 0.18;
+    return currentCfg().starSpeed * ramp;
+  }
+
+  function comboWindow() {
+    return currentCfg().comboWindow;
   }
 
   function spawnStar() {
@@ -1160,7 +1505,7 @@
       x: 0, y: 0, px: 0, py: 0,
       r: r,
       type: type,
-      speed: H * (0.24 + Math.random() * 0.07) * difficulty(),
+      speed: H * (0.24 + Math.random() * 0.07) * levelSpeedFactor(),
       rot: Math.random() * Math.PI * 2,
       rotSpeed: (Math.random() - 0.5) * 2.6,
       twinkle: Math.random() * Math.PI * 2,
@@ -1229,7 +1574,9 @@
     const oldMult = multiplier;
 
     combo++;
-    comboTimer = COMBO_WINDOW;
+    comboTimer = comboWindow();
+    levelCatches++;
+    if (combo > levelMaxCombo) levelMaxCombo = combo;
     const newMult = comboMultiplier(combo);
     const leveledUp = newMult > oldMult;
     multiplier = newMult;
@@ -1246,8 +1593,9 @@
                  '+' + gained + (multiplier > 1 ? ' (×' + multiplier + ')' : ''),
                  def.burst, false);
 
-    if (newMult === 5 && oldMult < 5) {
+    if (combo === currentCfg().feverAt) {
       feverTimer = 5;
+      levelFevers++;
       showComboFlash('FEVER MODE!');
       vibrate([100, 50, 100]);
     } else if (leveledUp) {
@@ -1293,7 +1641,7 @@
       y: -r * 2.5,
       px: 0, py: 0,
       r: r,
-      speed: H * (0.28 + Math.random() * 0.12) * difficulty(),
+      speed: H * (0.28 + Math.random() * 0.12) * levelSpeedFactor() * 1.05,
       rot: Math.random() * Math.PI * 2,
       rotSpeed: (Math.random() - 0.5) * 4
     });
@@ -1719,7 +2067,7 @@
      Pause / resume
   ============================================================ */
   function pauseGame() {
-    if (state !== STATE.PLAYING || paused) return;
+    if (state !== STATE.PLAYING || paused || celebrating) return;
     paused = true;
     pauseOverlay.classList.remove('hidden');
     pauseBtn.textContent = '▶';
@@ -1742,11 +2090,13 @@
   /* ============================================================
      Game flow
   ============================================================ */
-  function startGame() {
+  function startGame(levelIdx) {
     ensureAudio();
 
+    levelIndex = clamp(levelIdx || 0, 0, LEVELS.length - 1);
     state = STATE.PLAYING;
     paused = false;
+    celebrating = false;
     pauseOverlay.classList.add('hidden');
     pauseBtn.textContent = '⏸';
 
@@ -1756,9 +2106,15 @@
     multiplier = 1;
     comboTimer = 0;
     elapsed = 0;
+    levelStartScore = 0;
+    levelCatches = 0;
+    levelElapsed = 0;
+    levelMaxCombo = 0;
+    levelFevers = 0;
+    const cfg = currentCfg();
     spawnTimer = 0.15;
-    powerTimer = 9 + Math.random() * 4;
-    hazardTimer = 4;
+    powerTimer = cfg.powerupRate * (0.8 + Math.random() * 0.5);
+    hazardTimer = Math.max(1, cfg.hazardRate * 0.7);
     stars = [];
     hazards = [];
     powerups = [];
@@ -1794,6 +2150,10 @@
     updateComboBadge(false);
     startScreen.classList.add('hidden');
     overScreen.classList.add('hidden');
+    levelScreen.classList.add('hidden');
+    levelCompleteScreen.classList.add('hidden');
+
+    showLevelBanner('LEVEL ' + (levelIndex + 1), cfg.name);
 
     lastTime = 0;
     accumulator = 0;
@@ -1811,11 +2171,203 @@
 
     finalScoreEl.textContent = score;
     bestScoreEl.textContent = best;
+    overLevel.textContent = 'Level ' + (levelIndex + 1) + ' · ' + currentCfg().name;
     overScreen.classList.remove('hidden');
     updateHUD();
     playGameOver();
     vibrate([60, 50, 60, 50, 180]);
   }
+
+  /* ============================================================
+     Level system — goals, completion, unlock & persistence
+  ============================================================ */
+  function goalProgress() {
+    const cfg = currentCfg();
+    const g = cfg.goal;
+    if (g.type === 'score')   return { cur: Math.max(0, score - levelStartScore), target: g.target };
+    if (g.type === 'catch')   return { cur: levelCatches, target: g.target };
+    if (g.type === 'survive') return { cur: levelElapsed, target: g.target };
+    if (g.type === 'combo')   return { cur: levelMaxCombo, target: g.target };
+    return { cur: levelFevers, target: g.target };
+  }
+
+  function goalLabelText() {
+    const cfg = currentCfg();
+    const g = cfg.goal;
+    const p = goalProgress();
+    if (g.type === 'score')   return '⭐ ' + p.cur + '/' + p.target;
+    if (g.type === 'catch')   return '⭐ ' + p.cur + '/' + p.target + ' catches';
+    if (g.type === 'survive') return '⏱ ' + Math.floor(p.cur) + '/' + p.target + 's';
+    if (g.type === 'combo')   return '🔥 ' + p.cur + '/' + p.target + ' combo';
+    return '🌡 ' + p.cur + '/' + p.target + ' fever';
+  }
+
+  function updateGoalUI() {
+    const p = goalProgress();
+    const pct = clamp((p.cur / p.target) * 100, 0, 100);
+    goalFill.style.width = pct + '%';
+    goalLabel.textContent = goalLabelText();
+  }
+
+  function checkGoal() {
+    if (celebrating || state !== STATE.PLAYING) return;
+    const cfg = currentCfg();
+    const g = cfg.goal;
+    let done = false;
+    if (g.type === 'score')   done = score - levelStartScore >= g.target;
+    else if (g.type === 'catch')   done = levelCatches >= g.target;
+    else if (g.type === 'survive') done = levelElapsed >= g.target;
+    else if (g.type === 'combo')   done = levelMaxCombo >= g.target;
+    else if (g.type === 'fever')   done = levelFevers >= g.target;
+    if (done) completeLevel();
+  }
+
+  function loadProgress() {
+    try {
+      unlocked = clamp(Number(localStorage.getItem('cts_unlocked') || 1), 1, LEVELS.length);
+      const raw = localStorage.getItem('cts_stars');
+      if (raw) bestStars = JSON.parse(raw) || {};
+    } catch (e) {
+      unlocked = 1;
+      bestStars = {};
+    }
+  }
+
+  function saveProgress() {
+    try {
+      localStorage.setItem('cts_unlocked', String(unlocked));
+      localStorage.setItem('cts_stars', JSON.stringify(bestStars));
+    } catch (e) { /* storage may be unavailable */ }
+  }
+
+  function refreshStartBest() {
+    try { startBest.textContent = localStorage.getItem('cts_best') || '0'; }
+    catch (e) { startBest.textContent = '0'; }
+  }
+
+  function completeLevel() {
+    celebrating = true;
+    const cfg = currentCfg();
+
+    /* 1–3 stars based on lives kept: 0 misses → 3, 1 miss → 2, else 1 */
+    const earned = Math.max(1, 3 - misses);
+    bestStars[cfg.level] = Math.max(bestStars[cfg.level] || 0, earned);
+    unlocked = Math.max(unlocked, Math.min(LEVELS.length, cfg.level + 1));
+    saveProgress();
+
+    /* Keep the all-time best score up to date */
+    let best = score;
+    try {
+      const stored = Number(localStorage.getItem('cts_best') || 0);
+      best = Math.max(score, stored);
+      localStorage.setItem('cts_best', String(best));
+    } catch (e) { /* ignore */ }
+
+    const isFinal = cfg.level >= LEVELS.length;
+    lcTitle.textContent = isFinal ? '🏆 ALL LEVELS COMPLETE!' : 'LEVEL COMPLETE!';
+    lcGoal.textContent = 'Objective: ' + goalLabelText() + ' ✓';
+    lcScore.textContent = score;
+    lcBest.textContent = best;
+    lcUnlock.textContent = isFinal
+      ? 'You beat every level — legendary!'
+      : 'Level ' + (cfg.level + 1) + ' unlocked!';
+    nextLevelBtn.textContent = isFinal ? '🏆 Finish' : 'Next Level ▶';
+    nextLevelBtn.dataset.finish = isFinal ? '1' : '';
+
+    /* Pop the stars in one by one */
+    const starEls = Array.from(lcStars.children);
+    starEls.forEach((el, i) => {
+      el.classList.remove('earned');
+      void el.offsetWidth;
+      if (i < earned) {
+        el.style.animationDelay = (0.25 + i * 0.22) + 's';
+        el.classList.add('earned');
+      }
+    });
+
+    levelCompleteScreen.classList.remove('hidden');
+    playLevelComplete();
+    vibrate([40, 60, 40, 60, 120]);
+  }
+
+  function nextLevel() {
+    if (levelIndex >= LEVELS.length - 1) return;
+    levelIndex++;
+    levelStartScore = score;
+    levelCatches = 0;
+    levelElapsed = 0;
+    levelMaxCombo = 0;
+    levelFevers = 0;
+    celebrating = false;
+    levelCompleteScreen.classList.add('hidden');
+    showLevelBanner('LEVEL ' + (levelIndex + 1) + '!', currentCfg().name);
+    playLevelUp();
+    updateHUD();
+  }
+
+  function replayLevel() {
+    startGame(levelIndex);
+  }
+
+  function showLevelBanner(big, sub) {
+    lbBig.textContent = big;
+    lbSub.textContent = sub || '';
+    levelBanner.classList.remove('show');
+    void levelBanner.offsetWidth;
+    levelBanner.classList.add('show');
+  }
+
+  /* ---------- Level select screen ---------- */
+  function renderLevelGrid() {
+    let html = '';
+    for (let i = 0; i < LEVELS.length; i++) {
+      const cfg = LEVELS[i];
+      const n = i + 1;
+      const locked = n > unlocked;
+      const stars = bestStars[n] || 0;
+      const cls = 'lv-btn' +
+        (locked ? ' locked' : '') +
+        (n === unlocked ? ' current' : '') +
+        (stars > 0 ? ' done' : '') +
+        (cfg.tag ? ' special' : '');
+      let badge;
+      if (locked) badge = '<span class="lv-lock">🔒</span>';
+      else if (stars > 0) badge = '<span class="lv-stars">' + '⭐'.repeat(stars) + '</span>';
+      else badge = '<span class="lv-play">▶</span>';
+      html += '<button class="' + cls + '" data-lv="' + i + '">' +
+        '<span class="lv-num">' + n + '</span>' +
+        '<span class="lv-diff">' + cfg.difficulty + '</span>' +
+        (cfg.tag ? '<span class="lv-tag">' + cfg.tag + '</span>' : '') +
+        badge +
+        '</button>';
+    }
+    levelGrid.innerHTML = html;
+  }
+
+  function openLevels() {
+    renderLevelGrid();
+    startScreen.classList.add('hidden');
+    levelScreen.classList.remove('hidden');
+  }
+
+  function closeLevels() {
+    levelScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  }
+
+  /* ---------- Level sounds ---------- */
+  const playLevelComplete = () => {
+    tone(523, 0,    0.16, 'triangle', 0.16);
+    tone(659, 0.12, 0.16, 'triangle', 0.16);
+    tone(784, 0.24, 0.16, 'triangle', 0.16);
+    tone(1046, 0.36, 0.34, 'triangle', 0.18);
+  };
+  const playLevelUp = () => {
+    tone(392, 0,    0.12, 'sine', 0.14);
+    tone(523, 0.08, 0.12, 'sine', 0.14);
+    tone(659, 0.16, 0.12, 'sine', 0.14);
+    tone(784, 0.24, 0.22, 'sine', 0.15);
+  };
 
   /* ============================================================
      [V6] FIXED-TIMESTEP UPDATE
@@ -1825,6 +2377,7 @@
   ============================================================ */
   function update(dt) {
     elapsed += dt;
+    levelElapsed += dt;
 
     if (magnetTimer > 0) magnetTimer = Math.max(0, magnetTimer - dt);
     if (bigTimer    > 0) bigTimer    = Math.max(0, bigTimer    - dt);
@@ -1853,25 +2406,40 @@
     updateFloaters(dt);
     updateEffectsUI();
 
-    spawnTimer -= dt;
-    if (spawnTimer <= 0) {
-      spawnStar();
-      if (feverTimer > 0) spawnStar();
-      const base = Math.max(0.34, 0.95 - elapsed * 0.012);
-      spawnTimer = base * (0.75 + Math.random() * 0.5);
+    /* Goal bar refreshes a few times per second (survive goals tick) */
+    goalUiTimer -= dt;
+    if (goalUiTimer <= 0) {
+      updateGoalUI();
+      goalUiTimer = 0.25;
     }
 
+    const cfg = currentCfg();
+
+    /* Star spawning — rate & burst come from the level config */
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      const burst = cfg.spawnBurst + (feverTimer > 0 ? 1 : 0);
+      for (let b = 0; b < burst; b++) spawnStar();
+      spawnTimer = cfg.spawnRate * (0.75 + Math.random() * 0.5);
+    }
+
+    /* Power-ups — rarer at higher levels */
     powerTimer -= dt;
     if (powerTimer <= 0) {
       spawnPowerup();
-      powerTimer = 15 + Math.random() * 8;
+      powerTimer = cfg.powerupRate * (0.8 + Math.random() * 0.5);
     }
 
-    hazardTimer -= dt;
-    if (hazardTimer <= 0) {
-      spawnHazard();
-      hazardTimer = 4 + Math.random() * 5;
+    /* Hazards — frequency from the level config (0 disables them) */
+    if (cfg.hazardRate > 0) {
+      hazardTimer -= dt;
+      if (hazardTimer <= 0) {
+        spawnHazard();
+        hazardTimer = cfg.hazardRate * (0.7 + Math.random() * 0.6);
+      }
     }
+
+    checkGoal();
   }
 
   /* ============================================================
@@ -1894,7 +2462,7 @@
     if (frameTime < 0) frameTime = 0;
     if (frameTime > MAX_FRAME) frameTime = MAX_FRAME;
 
-    if (state === STATE.PLAYING && !paused) {
+    if (state === STATE.PLAYING && !paused && !celebrating) {
       accumulator += frameTime;
 
       let steps = 0;
@@ -1934,12 +2502,14 @@
       tryDash(dir || 1);
       e.preventDefault();
     } else if (k === 'p' || k === 'P' || k === 'Escape') {
-      if (state === STATE.PLAYING) {
+      if (!levelScreen.classList.contains('hidden')) {
+        closeLevels();
+      } else if (state === STATE.PLAYING) {
         if (paused) resumeGame(); else pauseGame();
       }
       e.preventDefault();
     } else if (k === ' ' || k === 'Enter') {
-      if (state === STATE.IDLE || state === STATE.OVER) startGame();
+      if (state === STATE.IDLE || state === STATE.OVER) startGame(0);
       e.preventDefault();
     }
   });
@@ -2062,8 +2632,29 @@
   /* ============================================================
      Buttons
   ============================================================ */
-  startBtn.addEventListener('click', startGame);
-  restartBtn.addEventListener('click', startGame);
+  startBtn.addEventListener('click', () => startGame(0));
+  restartBtn.addEventListener('click', () => startGame(0));
+  levelsBtn.addEventListener('click', openLevels);
+  levelsBackBtn.addEventListener('click', closeLevels);
+
+  levelGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.lv-btn');
+    if (!btn || btn.classList.contains('locked')) return;
+    startGame(Number(btn.dataset.lv));
+  });
+
+  nextLevelBtn.addEventListener('click', () => {
+    if (nextLevelBtn.dataset.finish === '1') {
+      levelCompleteScreen.classList.add('hidden');
+      startScreen.classList.remove('hidden');
+      state = STATE.IDLE;
+      renderLevelGrid();
+      refreshStartBest();
+    } else {
+      nextLevel();
+    }
+  });
+  replayLevelBtn.addEventListener('click', replayLevel);
 
   soundBtn.addEventListener('click', () => {
     soundOn = !soundOn;
@@ -2080,6 +2671,9 @@
   /* ============================================================
      Boot
   ============================================================ */
+  loadProgress();
+  refreshStartBest();
+  renderLevelGrid();
   resize();
   basket.cx = W / 2;
   basket.px = W / 2;
@@ -2088,6 +2682,39 @@
   updateComboBadge(false);
   needsRedraw = true;
   requestAnimationFrame(loop);
+
+  /* ============================================================
+     Debug / test hook (used by automated tests; harmless in play)
+  ============================================================ */
+  window.__cts = {
+    startGame: startGame,
+    update: update,
+    catchStar: catchStar,
+    nextLevel: nextLevel,
+    replayLevel: replayLevel,
+    completeLevel: completeLevel,
+    gameOver: gameOver,
+    renderLevelGrid: renderLevelGrid,
+    get state() { return state; },
+    get levelIndex() { return levelIndex; },
+    get score() { return score; },
+    get misses() { return misses; },
+    get unlocked() { return unlocked; },
+    get bestStars() { return bestStars; },
+    get celebrating() { return celebrating; },
+    get levelElapsed() { return levelElapsed; },
+    get levelCatches() { return levelCatches; },
+    get levelMaxCombo() { return levelMaxCombo; },
+    get levelFevers() { return levelFevers; },
+    _test: {
+      setMisses: function (n) { misses = n; updateHUD(); },
+      setScore: function (n) { score = n; updateHUD(); },
+      setLevelElapsed: function (t) { levelElapsed = t; },
+      setLevelCatches: function (n) { levelCatches = n; },
+      setLevelMaxCombo: function (n) { levelMaxCombo = n; },
+      setLevelFevers: function (n) { levelFevers = n; }
+    }
+  };
 
 })();
 </script>
